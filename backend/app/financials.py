@@ -1,16 +1,15 @@
-"""Step 3 of a sync: total each job's money lines.
+"""Sync step 3: total each job's money lines.
 
 Revenue and cost each come in three figures, because the three systems do
 not agree and nothing in the data says which is right. The totals are stored
 separately; a profit figure is only ever computed for a chosen pair.
 """
 
-from collections import defaultdict
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func, insert, literal, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Job, JobFinancials, MoneyLine, SyncRun
 
@@ -79,53 +78,56 @@ def profit(fin: JobFinancials, revenue_basis: RevenueBasis, cost_basis: CostBasi
     }
 
 
-def compute_financials(session: Session, run: SyncRun) -> dict:
-    lines_by_job: dict[int, list[MoneyLine]] = defaultdict(list)
-    for line in session.scalars(select(MoneyLine).where(MoneyLine.job_id.is_not(None))):
-        lines_by_job[line.job_id].append(line)
+async def compute_financials(db: AsyncSession, run: SyncRun) -> dict:
+    """Total every job's money lines in one statement. The database does the adding up."""
+    line = MoneyLine
+    is_invoice = line.kind == "customer_invoice"
+    is_bill = line.kind == "vendor_bill"
+    late = and_(
+        is_invoice, line.status == "SENT", line.amount > line.paid_amount, line.due_date < run.as_of
+    )
 
-    jobs = session.scalars(select(Job)).all()
-    for job in jobs:
-        lines = lines_by_job.get(job.id, [])
+    def total(column, where):
+        return func.coalesce(func.sum(column).filter(where), 0)
 
-        def total(kind: str) -> Decimal:
-            return sum((l.amount for l in lines if l.kind == kind), ZERO)
-
-        invoices = [l for l in lines if l.kind == "customer_invoice"]
-        bills = [l for l in lines if l.kind == "vendor_bill"]
-        invoiced = sum((i.amount for i in invoices), ZERO)
-        collected = sum((i.paid_amount for i in invoices), ZERO)
-
-        session.add(
-            JobFinancials(
-                job_id=job.id,
-                sync_run_id=run.id,
-                contract_value=job.contract_value,
-                budget=job.budget,
-                ops_cost=total("ops_cost"),
-                ledger_cost=total("ledger_cost"),
-                unpaid_bills=sum((b.amount - b.paid_amount for b in bills), ZERO),
-                ledger_revenue=total("ledger_revenue"),
-                invoiced=invoiced,
-                sent=sum((i.amount for i in invoices if i.status == "SENT"), ZERO),
-                collected=collected,
-                owed=invoiced - collected,
-                past_due=sum(
-                    (
-                        i.amount - i.paid_amount
-                        for i in invoices
-                        if i.status == "SENT" and i.amount > i.paid_amount and i.due_date and i.due_date < run.as_of
-                    ),
-                    ZERO,
-                ),
-            )
+    invoiced = total(line.amount, is_invoice)
+    collected = total(line.paid_amount, is_invoice)
+    totals = (
+        select(
+            Job.id,
+            literal(run.id),
+            Job.contract_value,
+            Job.budget,
+            total(line.amount, line.kind == "ops_cost"),
+            total(line.amount, line.kind == "ledger_cost"),
+            total(line.amount - line.paid_amount, is_bill),
+            total(line.amount, line.kind == "ledger_revenue"),
+            invoiced,
+            total(line.amount, and_(is_invoice, line.status == "SENT")),
+            collected,
+            invoiced - collected,
+            total(line.amount - line.paid_amount, late),
         )
-    session.flush()
-    return {"jobs": len(jobs)}
+        .outerjoin(line, line.job_id == Job.id)
+        .group_by(Job.id)
+    )
+    await db.execute(
+        insert(JobFinancials).from_select(
+            [
+                "job_id", "sync_run_id", "contract_value", "budget", "ops_cost", "ledger_cost",
+                "unpaid_bills", "ledger_revenue", "invoiced", "sent", "collected", "owed", "past_due",
+            ],
+            totals,
+        )
+    )
+    written = await db.scalar(
+        select(func.count()).select_from(JobFinancials).where(JobFinancials.sync_run_id == run.id)
+    )
+    return {"jobs": written}
 
 
-def latest_run_id(session: Session) -> int | None:
+async def latest_run_id(db: AsyncSession) -> int | None:
     """The most recent sync that finished. Readers always use this one."""
-    return session.scalar(
+    return await db.scalar(
         select(SyncRun.id).where(SyncRun.status == "succeeded").order_by(SyncRun.id.desc()).limit(1)
     )

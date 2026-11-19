@@ -1,9 +1,9 @@
-# Closeout
+# Harborstone Reconciliation
 
 A reconciliation service for Harborstone, built for the Ciridae case study.
 
 Harborstone runs on a CRM, a project management system and an accounting
-system that were never designed as one workflow. Closeout joins them into one
+system that were never designed as one workflow. This service joins them into one
 record per job and reports where they disagree, so that nobody has to
 reconcile a job by hand to know whether it is finished and what it earned.
 
@@ -28,12 +28,10 @@ Requires Postgres 15+, Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 createdb harborstone
 psql -d harborstone -f source_data.sql
 
-# 2. Create our own database, then our tables, and start the API
-createdb harborstone_recon
+# 2. Start the API. This creates our database and .env if they are missing,
+#    and applies any pending migrations on startup.
 cd backend
-uv sync
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload
+./run.sh
 
 # 3. Run the first sync
 curl -X POST localhost:8000/api/v1/sync-runs
@@ -41,11 +39,11 @@ curl -X POST localhost:8000/api/v1/sync-runs
 
 Interactive API docs are at http://localhost:8000/docs.
 
-Settings come from the environment or `backend/.env`:
+Settings are read from `backend/.env` (copied from `.env.example`):
 
-| Variable | Default | Purpose |
+| Variable | Example | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | `postgresql+psycopg:///harborstone_recon` | Our own database. Everything Closeout writes goes here |
+| `DATABASE_URL` | `postgresql+psycopg:///harborstone_recon` | Our own database. Everything this service writes goes here |
 | `SOURCE_DATABASE_URL` | `postgresql+psycopg:///harborstone` | Harborstone's database with the export. Opened read-only |
 | `SOURCE_SCHEMA` | `source_company` | Schema holding the export |
 | `API_KEY` | not set | When set, every `/api/v1` request must send it as `X-API-Key` |
@@ -56,11 +54,29 @@ Settings come from the environment or `backend/.env`:
 cd backend && uv run pytest
 ```
 
-65 tests. Each run builds two databases of its own, `harborstone_test` from
-`source_data.sql` and an empty `harborstone_recon_test`, so the working databases are
-never touched.
+71 tests. Each run builds two databases of its own, `harborstone_test` from
+`source_data.sql` and an empty `harborstone_recon_test`, so the working
+databases are never touched. Every test module starts with our tables empty.
 Expected figures are tied to the export: for example $3,174,100 invoiced,
 $1,696,536 collected and 62 issues as of 28 July 2026.
+
+## Code layout
+
+Everything is in `backend/app/`, one job per file.
+
+| File | Job |
+| --- | --- |
+| `server.py` | Creates the app; registers routes, middleware and error handlers |
+| `endpoints.py` | The routes, and nothing else. Each opens a client with `async with` and awaits one method |
+| `client.py` | Every operation. Owns the session and transaction for one request |
+| `database.py` | Settings, both engines, migrations at startup |
+| `models.py`, `schemas.py`, `serializers.py` | Tables, API contracts, and the conversion between them |
+| `connector.py` | Reads rows from the source systems |
+| `landing.py`, `normalize.py`, `financials.py`, `issues.py` | The four steps of a sync, in order |
+| `errors.py`, `exception_handlers.py`, `middleware.py` | Typed errors, one error format, request IDs, optional API key |
+
+All database access is async. Schema changes go through Alembic migrations,
+which record what has been applied in `recon.alembic_version`.
 
 ## How a sync works
 
@@ -89,7 +105,11 @@ database is a separate one, and the connection to it is read-only:
 
 ## API
 
-All under `/api/v1`. List endpoints take `limit` and `offset`.
+All under `/api/v1`. List endpoints take `limit` and `offset` and return
+`{"data": [...], "total": n, "has_more": bool}`. Amounts are decimal strings
+such as `"246300.00"`. Errors always look like
+`{"error": {"type", "message", "request_id"}}`, and every response carries an
+`X-Request-ID` header.
 
 | Method | Path | What it does |
 | --- | --- | --- |
@@ -111,7 +131,7 @@ All under `/api/v1`. List endpoints take `limit` and `offset`.
 
 - **Our own database, source left read-only.** The joined record, the
   totals, the issues and their history have no home in the three systems.
-  Closeout keeps them in a separate database and opens Harborstone's with a
+  This service keeps them in a separate database and opens Harborstone's with a
   read-only connection, so nothing here can change their data.
 - **Three layers, each rebuildable from the one before.** Changing a rule
   means re-running from `raw`, not calling the source again.

@@ -3,6 +3,9 @@
 `raw` holds untouched copies of source rows. `recon` holds the joined,
 job-centred model, the computed totals and the issues found. Every money
 line points back to the raw row it came from.
+
+Relationships never load on their own (`lazy="raise"`). Under async a silent
+lazy load would fail at an awkward moment, so every query names what it needs.
 """
 
 from datetime import date, datetime
@@ -117,9 +120,9 @@ class Job(Base):
     project_record_id: Mapped[int] = mapped_column(ForeignKey(f"{RAW}.source_record.id"))
     sync_run_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.sync_run.id"))
 
-    customer: Mapped[Company | None] = relationship()
+    customer: Mapped[Company | None] = relationship(lazy="raise")
     owners: Mapped[list["JobOwner"]] = relationship(
-        back_populates="job", cascade="all, delete-orphan", order_by="JobOwner.role"
+        back_populates="job", cascade="all, delete-orphan", order_by="JobOwner.role", lazy="raise"
     )
 
 
@@ -138,7 +141,7 @@ class JobOwner(Base):
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str | None] = mapped_column(String(200))
 
-    job: Mapped[Job] = relationship(back_populates="owners")
+    job: Mapped[Job] = relationship(back_populates="owners", lazy="raise")
 
 
 class CostCodeMap(Base):
@@ -185,8 +188,8 @@ class MoneyLine(Base):
     source_record_id: Mapped[int] = mapped_column(ForeignKey(f"{RAW}.source_record.id"))
     sync_run_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.sync_run.id"))
 
-    job: Mapped[Job | None] = relationship()
-    company: Mapped[Company | None] = relationship()
+    job: Mapped[Job | None] = relationship(lazy="raise")
+    company: Mapped[Company | None] = relationship(lazy="raise")
 
 
 class JobFinancials(Base):
@@ -260,12 +263,12 @@ class Issue(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    type: Mapped[IssueType] = relationship()
-    job: Mapped[Job | None] = relationship()
+    type: Mapped[IssueType] = relationship(lazy="raise")
+    job: Mapped[Job | None] = relationship(lazy="raise")
     events: Mapped[list["IssueEvent"]] = relationship(
-        back_populates="issue", cascade="all, delete-orphan", order_by="IssueEvent.id"
+        back_populates="issue", cascade="all, delete-orphan", order_by="IssueEvent.id", lazy="raise"
     )
-    evidence: Mapped[list["IssueEvidence"]] = relationship(cascade="all, delete-orphan")
+    evidence: Mapped[list["IssueEvidence"]] = relationship(cascade="all, delete-orphan", lazy="raise")
 
 
 class IssueEvidence(Base):
@@ -279,7 +282,7 @@ class IssueEvidence(Base):
         ForeignKey(f"{RECON}.money_line.id", ondelete="CASCADE"), primary_key=True
     )
 
-    line: Mapped[MoneyLine] = relationship()
+    line: Mapped[MoneyLine] = relationship(lazy="raise")
 
 
 class IssueEvent(Base):
@@ -296,4 +299,4 @@ class IssueEvent(Base):
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    issue: Mapped[Issue] = relationship(back_populates="events")
+    issue: Mapped[Issue] = relationship(back_populates="events", lazy="raise")

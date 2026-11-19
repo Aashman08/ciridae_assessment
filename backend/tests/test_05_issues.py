@@ -1,12 +1,15 @@
+"""Sync step 4: what the checks find, and how issues behave across syncs."""
+
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, select, text
 
-from app.models import Issue, IssueEvent, IssueType, MoneyLine
-from app.sync.issues import IssueActionError, apply_action
-from app.sync.runner import run_sync
+from app.errors import InvalidRequestError, InvalidStateError
+from app.models import Issue, IssueEvent, IssueType
+from app.schemas import IssueAction, IssueDetailResponse, IssueFilters, IssueTypeUpdate
 
+pytestmark = pytest.mark.usefixtures("synced")
 D = Decimal
 ACTIVE = ("open", "assigned")
 
@@ -28,160 +31,155 @@ EXPECTED = {
 }
 
 
-@pytest.fixture(scope="module", autouse=True)
-def synced(database):
-    from app.db import new_session
-
-    with new_session() as s:
-        run_sync(s)
+async def find(recon, key: str) -> IssueDetailResponse:
+    """Look an issue up by its stable key, whatever its status."""
+    issue_id = await recon.db.scalar(select(Issue.id).where(Issue.key == key))
+    return await recon.get_issue(issue_id)
 
 
-def active(session, *where):
-    return session.scalars(select(Issue).where(Issue.status.in_(ACTIVE), *where)).all()
+async def active_count(recon, **filters) -> int:
+    return (await recon.list_issues(IssueFilters(limit=500, **filters))).total
 
 
-def get(session, key) -> Issue:
-    session.expire_all()
-    return session.scalar(select(Issue).where(Issue.key == key))
+async def act(recon, key: str, **action) -> IssueDetailResponse:
+    issue = await find(recon, key)
+    return await recon.act_on_issue(issue.id, IssueAction(**action))
 
 
-def test_thirteen_issue_types_are_seeded(session):
-    assert session.scalar(select(func.count()).select_from(IssueType)) == 13
+async def test_thirteen_issue_types_are_seeded(db):
+    assert await db.scalar(select(func.count()).select_from(IssueType)) == 13
 
 
-def test_findings_per_type_match_the_export(session):
-    rows = session.execute(
-        select(Issue.type_key, func.count(), func.sum(Issue.amount)).where(Issue.status.in_(ACTIVE)).group_by(Issue.type_key)
+async def test_findings_per_type_match_the_export(db):
+    rows = (
+        await db.execute(
+            select(Issue.type_key, func.count(), func.sum(Issue.amount))
+            .where(Issue.status.in_(ACTIVE))
+            .group_by(Issue.type_key)
+        )
     ).all()
     assert {key: (count, amount) for key, count, amount in rows} == EXPECTED
     assert sum(count for _, count, _ in rows) == 62
 
 
-def test_issues_go_to_the_ops_manager_then_the_account_executive(session):
-    assert len(active(session, Issue.owner == "Tasha Green")) == 10
+async def test_issues_go_to_the_ops_manager_then_the_account_executive(recon):
+    assert await active_count(recon, owner="Tasha Green") == 10
     # BTX00030002 has no ops manager, so its issues fall to the account executive.
-    assert get(session, "past_due:INV-2026-0515").owner == "Danny Alvarez"
+    assert (await find(recon, "past_due:INV-2026-0515")).owner == "Danny Alvarez"
     # A bill with no job has nobody to go to.
-    assert get(session, "no_job:MDC-55201").owner == "Finance queue"
-    assert get(session, "no_job:MDC-55201").job_id is None
+    orphan = await find(recon, "no_job:MDC-55201")
+    assert (orphan.owner, orphan.job_number) == ("Finance queue", None)
 
 
-def test_issue_reads_in_plain_words(session):
-    issue = get(session, "past_due:INV-2026-0538")
+async def test_issue_reads_in_plain_words(recon):
+    issue = await find(recon, "past_due:INV-2026-0538")
+    assert issue.title == "Customer invoice past due"
     assert issue.amount == D("246300.00")
     assert issue.summary == "INV-2026-0538, 14 days past due"
     assert issue.detail == "INV-2026-0538 to Northgate Independent School District: $246,300 open, 14 days past due."
+    assert issue.next_step == "Call the customer's payables contact and log the outcome."
     assert issue.action_label == "Log follow-up"
-
-    discount = get(session, "discount:ARS-20447")
-    assert discount.summary == "ARS-20447, save $967 by Jul 30"
+    assert (await find(recon, "discount:ARS-20447")).summary == "ARS-20447, save $967 by Jul 30"
 
 
-def test_issue_cites_the_money_lines_behind_it(session):
-    issue = get(session, "past_due:INV-2026-0538")
-    cited = [e.line for e in issue.evidence]
-    assert [(l.kind, l.doc_number) for l in cited] == [("customer_invoice", "INV-2026-0538")]
-
-    disagree = get(session, "cost_disagree:CTX00080002")
-    kinds = {e.line.kind for e in disagree.evidence}
-    assert kinds == {"ops_cost", "ledger_cost"}
-    by_kind = lambda k: sum(e.line.amount for e in disagree.evidence if e.line.kind == k)  # noqa: E731
+async def test_issue_cites_the_money_lines_behind_it(recon):
+    issue = await find(recon, "past_due:INV-2026-0538")
+    assert [(e.kind, e.doc_number, e.open_amount) for e in issue.evidence] == [
+        ("customer_invoice", "INV-2026-0538", D("246300.00"))
+    ]
+    disagree = await find(recon, "cost_disagree:CTX00080002")
+    assert {e.kind for e in disagree.evidence} == {"ops_cost", "ledger_cost"}
+    by_kind = lambda kind: sum(e.amount for e in disagree.evidence if e.kind == kind)  # noqa: E731
     assert abs(by_kind("ops_cost") - by_kind("ledger_cost")) == disagree.amount
 
 
-def test_resync_changes_nothing(session):
-    ids_before = dict(session.execute(select(Issue.key, Issue.id)).all())
-    events_before = session.scalar(select(func.count()).select_from(IssueEvent))
-    stats = run_sync(session).stats["issues"]
-    assert (stats["opened"], stats["reopened"], stats["cleared"]) == (0, 0, 0)
-    assert stats["unchanged"] == 62
-    assert dict(session.execute(select(Issue.key, Issue.id)).all()) == ids_before
-    assert session.scalar(select(func.count()).select_from(IssueEvent)) == events_before
+async def test_resync_changes_nothing(recon, db):
+    ids_before = dict((await db.execute(select(Issue.key, Issue.id))).all())
+    events_before = await db.scalar(select(func.count()).select_from(IssueEvent))
+    stats = (await recon.run_sync()).stats["issues"]
+    assert (stats["opened"], stats["reopened"], stats["cleared"], stats["unchanged"]) == (0, 0, 0, 62)
+    assert dict((await db.execute(select(Issue.key, Issue.id))).all()) == ids_before
+    assert await db.scalar(select(func.count()).select_from(IssueEvent)) == events_before
 
 
-def test_resolved_issue_stays_resolved_after_resync(session):
-    issue = get(session, "no_owner:XAZ00120002")
-    apply_action(session, issue, "resolve", actor="Rachel Kim", note="Elena Sokolov is covering this job")
-    session.commit()
-    run_sync(session)
-    issue = get(session, "no_owner:XAZ00120002")
-    assert issue.status == "resolved"
-    assert issue.resolution_note == "Elena Sokolov is covering this job"
+async def test_resolved_issue_stays_resolved_after_resync(recon):
+    key = "no_owner:XAZ00120002"
+    await act(recon, key, action="resolve", actor="Rachel Kim", note="Elena Sokolov is covering this job")
+    await recon.run_sync()
+    issue = await find(recon, key)
+    assert (issue.status, issue.resolution_note) == ("resolved", "Elena Sokolov is covering this job")
     assert [e.kind for e in issue.events] == ["opened", "resolved"]
-    apply_action(session, issue, "reopen", actor="Rachel Kim")
-    session.commit()
+    assert await active_count(recon, type="no_owner") == 6
+
+    reopened = await act(recon, key, action="reopen", actor="Rachel Kim")
+    assert (reopened.status, reopened.resolution_note) == ("open", None)
+    assert await active_count(recon, type="no_owner") == 7
 
 
-def test_assignment_and_comments_survive_a_resync(session):
-    issue = get(session, "past_due:INV-2026-0515")
-    apply_action(session, issue, "assign", actor="Rachel Kim", assignee="Jenna Okafor")
-    apply_action(session, issue, "comment", actor="Jenna Okafor", note="Left a voicemail with their payables desk")
-    session.commit()
-    run_sync(session)
-    issue = get(session, "past_due:INV-2026-0515")
+async def test_assignment_and_comments_survive_a_resync(recon):
+    key = "past_due:INV-2026-0515"
+    await act(recon, key, action="assign", actor="Rachel Kim", assignee="Jenna Okafor")
+    await act(recon, key, action="comment", actor="Jenna Okafor", note="Left a voicemail with their payables desk")
+    await recon.run_sync()
+    issue = await find(recon, key)
     assert (issue.status, issue.owner) == ("assigned", "Jenna Okafor")
-    # Earlier syncs with other as-of dates may have cleared and reopened this
-    # issue, so only the tail of its history is fixed.
-    assert [e.kind for e in issue.events][-2:] == ["assigned", "commented"]
+    assert [(e.kind, e.actor) for e in issue.events] == [
+        ("opened", "system"), ("assigned", "Rachel Kim"), ("commented", "Jenna Okafor"),
+    ]
     assert issue.events[-1].note == "Left a voicemail with their payables desk"
 
 
-def test_issue_clears_when_the_source_is_fixed_and_reopens_if_it_returns(session, source):
-    fix = "update source_company.ar_invoices set status = :s where invoice_number = 'INV-2026-0590'"
-    source.execute(text(fix), {"s": "SENT"})
-    source.commit()
+async def test_issue_clears_when_the_source_is_fixed_and_reopens_if_it_returns(recon, source):
+    key = "not_sent:INV-2026-0590"
+    change = text("update source_company.ar_invoices set status = :s where invoice_number = 'INV-2026-0590'")
+    await source.execute(change, {"s": "SENT"})
+    await source.commit()
     try:
-        stats = run_sync(session).stats["issues"]
-        assert stats["cleared"] == 1
-        issue = get(session, "not_sent:INV-2026-0590")
-        assert issue.status == "cleared"
-        assert issue.events[-1].kind == "cleared"
+        assert (await recon.run_sync()).stats["issues"]["cleared"] == 1
+        cleared = await find(recon, key)
+        assert (cleared.status, cleared.events[-1].kind) == ("cleared", "cleared")
+        assert await active_count(recon, type="not_sent") == 4
     finally:
-        source.execute(text(fix), {"s": "APPROVED"})
-        source.commit()
-    stats = run_sync(session).stats["issues"]
-    assert stats["reopened"] == 1
-    issue = get(session, "not_sent:INV-2026-0590")
+        await source.execute(change, {"s": "APPROVED"})
+        await source.commit()
+    assert (await recon.run_sync()).stats["issues"]["reopened"] == 1
+    issue = await find(recon, key)
     assert issue.status == "open"
     assert [e.kind for e in issue.events] == ["opened", "cleared", "reopened"]
 
 
-def test_tolerance_is_read_from_the_issue_type(session):
-    session.execute(update(IssueType).where(IssueType.key == "cost_disagree").values(tolerance=D("0.10")))
-    session.commit()
+async def test_tolerance_is_read_from_the_issue_type(recon):
+    await recon.update_issue_type("cost_disagree", IssueTypeUpdate(tolerance=D("0.10")))
     try:
-        run_sync(session)
-        assert len(active(session, Issue.type_key == "cost_disagree")) == 9
+        assert await active_count(recon, type="cost_disagree") == 17  # not until the next sync
+        await recon.run_sync()
+        assert await active_count(recon, type="cost_disagree") == 9
     finally:
-        session.execute(update(IssueType).where(IssueType.key == "cost_disagree").values(tolerance=D("0.02")))
-        session.commit()
-        run_sync(session)
-    assert len(active(session, Issue.type_key == "cost_disagree")) == 17
+        await recon.update_issue_type("cost_disagree", IssueTypeUpdate(tolerance=D("0.02")))
+        await recon.run_sync()
+    assert await active_count(recon, type="cost_disagree") == 17
 
 
-def test_disabling_an_issue_type_clears_its_issues(session):
-    session.execute(update(IssueType).where(IssueType.key == "discount").values(enabled=False))
-    session.commit()
+async def test_disabling_an_issue_type_clears_its_issues(recon):
+    await recon.update_issue_type("discount", IssueTypeUpdate(enabled=False))
     try:
-        run_sync(session)
-        assert active(session, Issue.type_key == "discount") == []
+        await recon.run_sync()
+        assert await active_count(recon, type="discount") == 0
     finally:
-        session.execute(update(IssueType).where(IssueType.key == "discount").values(enabled=True))
-        session.commit()
-        run_sync(session)
-    assert len(active(session, Issue.type_key == "discount")) == 3
+        await recon.update_issue_type("discount", IssueTypeUpdate(enabled=True))
+        await recon.run_sync()
+    assert await active_count(recon, type="discount") == 3
 
 
-def test_actions_are_validated(session):
-    issue = get(session, "no_job:DTL-9954")
-    with pytest.raises(IssueActionError, match="needs a note"):
-        apply_action(session, issue, "resolve", actor="Rachel Kim")
-    with pytest.raises(IssueActionError, match="assignee"):
-        apply_action(session, issue, "assign", actor="Rachel Kim")
-    with pytest.raises(IssueActionError, match="Only a resolved or cleared"):
-        apply_action(session, issue, "reopen", actor="Rachel Kim")
-    session.rollback()
-
-
-def test_money_lines_are_untouched_by_issue_runs(session):
-    assert session.scalar(select(func.count()).select_from(MoneyLine)) == 194
+async def test_actions_are_validated(recon):
+    key = "no_job:DTL-9954"
+    with pytest.raises(InvalidRequestError, match="needs a note"):
+        await act(recon, key, action="resolve", actor="Rachel Kim")
+    with pytest.raises(InvalidRequestError, match="assignee"):
+        await act(recon, key, action="assign", actor="Rachel Kim")
+    with pytest.raises(InvalidStateError, match="Only a resolved or cleared"):
+        await act(recon, key, action="reopen", actor="Rachel Kim")
+    with pytest.raises(InvalidRequestError, match="no tolerance"):
+        await recon.update_issue_type("no_owner", IssueTypeUpdate(tolerance=D("0.5")))
+    issue = await find(recon, key)
+    assert (issue.status, [e.kind for e in issue.events]) == ("open", ["opened"])

@@ -1,4 +1,4 @@
-"""Step 2 of a sync: build the job-centred model from the landed rows.
+"""Sync step 2: build the job-centred model from the landed rows.
 
 Reads only from `raw.source_record`, never from the source systems, so it
 can be re-run on its own when the mapping rules change.
@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Company, CostCodeMap, Job, JobOwner, MoneyLine, SourceRecord, SyncRun
 
@@ -41,13 +41,18 @@ def canonical_category(code: str | None) -> str | None:
 class Landed:
     """The rows landed in this run, grouped by source table."""
 
-    def __init__(self, session: Session, run: SyncRun):
+    def __init__(self) -> None:
         self._by_table: dict[str, list[tuple[int, dict]]] = defaultdict(list)
+
+    @classmethod
+    async def load(cls, db: AsyncSession, run: SyncRun) -> "Landed":
+        landed = cls()
         query = select(SourceRecord.id, SourceRecord.table_name, SourceRecord.payload).where(
             SourceRecord.last_seen_run_id == run.id
         )
-        for record_id, table, payload in session.execute(query):
-            self._by_table[table].append((record_id, payload))
+        for record_id, table, payload in await db.execute(query):
+            landed._by_table[table].append((record_id, payload))
+        return landed
 
     def rows(self, table: str) -> list[tuple[int, dict]]:
         return self._by_table.get(table, [])
@@ -56,22 +61,22 @@ class Landed:
         return {p["id"]: p for _, p in self.rows(table)}
 
 
-def _upsert(session: Session, model, rows: list[dict], key: list[str]) -> None:
+async def _upsert(db: AsyncSession, model, rows: list[dict], key: list[str]) -> None:
     if not rows:
         return
     statement = insert(model).values(rows)
     updatable = {c: statement.excluded[c] for c in rows[0] if c not in key}
-    session.execute(statement.on_conflict_do_update(index_elements=key, set_=updatable))
+    await db.execute(statement.on_conflict_do_update(index_elements=key, set_=updatable))
 
 
-def normalize(session: Session, run: SyncRun) -> dict:
-    landed = Landed(session, run)
+async def normalize(db: AsyncSession, run: SyncRun) -> dict:
+    landed = await Landed.load(db, run)
 
     # --- Companies: customers and vendors in one table -----------------------
     vendor_ref = {p["company_id"]: p["legacy_vendor_id"] for _, p in landed.rows("vendor_accounts")}
     discount = {p["company_id"]: p for _, p in landed.rows("vendor_discount_terms")}
-    _upsert(
-        session,
+    await _upsert(
+        db,
         Company,
         [
             {
@@ -89,7 +94,7 @@ def normalize(session: Session, run: SyncRun) -> dict:
         ],
         ["source_id"],
     )
-    company_id = dict(session.execute(select(Company.source_id, Company.id)).all())
+    company_id = dict((await db.execute(select(Company.source_id, Company.id))).all())
 
     # --- Jobs: each project joined to the opportunity it came from -----------
     opportunities = {p["id"]: (record_id, p) for record_id, p in landed.rows("opportunities")}
@@ -132,8 +137,8 @@ def normalize(session: Session, run: SyncRun) -> dict:
                 "sync_run_id": run.id,
             }
         )
-    _upsert(session, Job, job_rows, ["job_number"])
-    job_id_by_number = dict(session.execute(select(Job.job_number, Job.id)).all())
+    await _upsert(db, Job, job_rows, ["job_number"])
+    job_id_by_number = dict((await db.execute(select(Job.job_number, Job.id))).all())
     job_id_by_opp = {
         project["opportunity_id"]: job_id_by_number[project["project_number"]]
         for _, project in landed.rows("projects")
@@ -141,7 +146,7 @@ def normalize(session: Session, run: SyncRun) -> dict:
 
     # --- Owners --------------------------------------------------------------
     employees = landed.by_id("employees")
-    session.execute(delete(JobOwner))
+    await db.execute(delete(JobOwner))
     owner_rows = {}
     for _, p in landed.rows("engagement_assignments"):
         role = OWNER_ROLES.get(p["capacity"])
@@ -155,10 +160,10 @@ def normalize(session: Session, run: SyncRun) -> dict:
                 "email": employee.get("email"),
             }
     if owner_rows:
-        session.execute(insert(JobOwner).values(list(owner_rows.values())))
+        await db.execute(insert(JobOwner).values(list(owner_rows.values())))
 
     # --- Cost code crosswalk -------------------------------------------------
-    session.execute(delete(CostCodeMap))
+    await db.execute(delete(CostCodeMap))
     crosswalk: dict[tuple[str, str], dict] = {}
     for _, p in landed.rows("cost_codes"):
         crosswalk[("accounting", p["code"])] = {"category": canonical_category(p["code"]), "note": p.get("name")}
@@ -174,7 +179,7 @@ def normalize(session: Session, run: SyncRun) -> dict:
                 {"category": UNCLASSIFIED, "note": "The ledger books all job cost to this one account"},
             )
     if crosswalk:
-        session.execute(
+        await db.execute(
             insert(CostCodeMap).values(
                 [{"source_system": s, "source_code": c, **v} for (s, c), v in sorted(crosswalk.items())]
             )
@@ -267,13 +272,13 @@ def normalize(session: Session, run: SyncRun) -> dict:
             line_date=to_date(p.get("payment_date")), status=p.get("payment_method"),
         )
 
-    _upsert(session, MoneyLine, lines, ["source_table", "source_pk"])
+    await _upsert(db, MoneyLine, lines, ["source_table", "source_pk"])
 
     # --- Remove anything the source no longer has ----------------------------
     removed = 0
     for model in (MoneyLine, Job, Company):
-        removed += session.execute(delete(model).where(model.sync_run_id != run.id)).rowcount
-    session.flush()
+        removed += (await db.execute(delete(model).where(model.sync_run_id != run.id))).rowcount
+    await db.flush()
 
     return {
         "companies": len(company_id),
