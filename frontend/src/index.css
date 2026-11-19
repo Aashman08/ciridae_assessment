@@ -1,0 +1,223 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+
+/*
+  Design direction (after unslop by Damir Sokolovsky, @heydamir, CC BY 4.0).
+  Product   Shows Harborstone's finance and project teams where a job's cost,
+            billing and cash disagree across its three systems.
+  Character Exact, steady, practical.
+  Chrome    One graphite ramp, three text roles, hairline borders. Nothing glows.
+  Accent    Hi-vis amber, spent only on what needs a person.
+  Rhythm    Every size and gap sits on a 4px grid. Rows are 36, 48 or 56 tall.
+*/
+
+:root {
+  --bg: #fafafa;
+  --card: #ffffff;
+  --raised: #f4f4f5;
+  --side: #f4f4f5;
+  --ink: #171717;
+  --ink-2: #525252;
+  --muted: #737373;
+  --hair: rgb(23 23 23 / 0.09);
+  --accent: #f5b301;
+  --on-accent: #1f1600;
+  --accent-ink: #8a5d00;
+  --btn: #171717;
+  --btn-ink: #ffffff;
+  --neg: #dc2626;
+  --lift: 0 1px 2px rgb(0 0 0 / 0.05);
+  --float: 0 8px 24px rgb(0 0 0 / 0.12);
+  --scrim: rgb(23 23 23 / 0.32);
+  color-scheme: light;
+}
+
+/* Dark follows the system setting until someone picks a theme in the sidebar.
+   The same values appear twice so the choice wins in both directions. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #141415;
+    --card: #19191b;
+    --raised: #232325;
+    --side: #0f0f10;
+    --ink: #ededed;
+    --ink-2: #a1a1a6;
+    --muted: #85858b;
+    --hair: rgb(237 237 237 / 0.08);
+    --accent: #f5b301;
+    --on-accent: #1f1600;
+    --accent-ink: #f5b301;
+    --btn: #ededed;
+    --btn-ink: #141415;
+    --neg: #e5484d;
+    --lift: none;
+    --float: 0 8px 24px rgb(0 0 0 / 0.5);
+    --scrim: rgb(0 0 0 / 0.6);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #141415;
+  --card: #19191b;
+  --raised: #232325;
+  --side: #0f0f10;
+  --ink: #ededed;
+  --ink-2: #a1a1a6;
+  --muted: #85858b;
+  --hair: rgb(237 237 237 / 0.08);
+  --accent: #f5b301;
+  --on-accent: #1f1600;
+  --accent-ink: #f5b301;
+  --btn: #ededed;
+  --btn-ink: #141415;
+  --neg: #e5484d;
+  --lift: none;
+  --float: 0 8px 24px rgb(0 0 0 / 0.5);
+  --scrim: rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, Menlo, Consolas, monospace;
+
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-raised: var(--raised);
+  --color-side: var(--side);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-hair: var(--hair);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-btn: var(--btn);
+  --color-btn-ink: var(--btn-ink);
+  --color-neg: var(--neg);
+  --color-scrim: var(--scrim);
+
+  --shadow-lift: var(--lift);
+  --shadow-float: var(--float);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-rise: rise 360ms var(--ease-out);
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+}
+
+@layer base {
+  /* The whole interface is sized in rem, so this one value scales everything
+     together: text, spacing, rows, buttons and icons. 112.5% is one step up
+     from the browser default. */
+  html {
+    font-size: 112.5%;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent-ink);
+    outline-offset: 2px;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+}
+
+@layer components {
+  /* One table style for every list, so rows and columns line up the same way everywhere. */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .data-table th {
+    height: 2.25rem;
+    padding: 0 0.75rem;
+    border-bottom: 1px solid var(--hair);
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--muted);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .data-table td {
+    height: 3rem;
+    padding: 0 0.75rem;
+    border-bottom: 1px solid var(--hair);
+    white-space: nowrap;
+  }
+
+  .data-table.tall td {
+    height: 3.5rem;
+  }
+
+  .data-table tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .data-table th:first-child,
+  .data-table td:first-child {
+    padding-left: 1.25rem;
+  }
+
+  .data-table th:last-child,
+  .data-table td:last-child {
+    padding-right: 1.25rem;
+  }
+
+  .data-table .num {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .data-table th.num {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+  }
+
+  .data-table tr.clickable {
+    cursor: pointer;
+    transition: background-color 140ms var(--ease-out);
+  }
+
+  .data-table tr.clickable:hover {
+    background: var(--raised);
+  }
+}

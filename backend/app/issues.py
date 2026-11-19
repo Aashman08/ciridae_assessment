@@ -90,6 +90,8 @@ class Finding:
     action_label: str
     owner: str = FINANCE_QUEUE
     job_id: int | None = None
+    document: str | None = None
+    due_on: date | None = None
     evidence: list[int] = field(default_factory=list)
 
     @property
@@ -146,7 +148,7 @@ def _jobs(run: SyncRun, *columns):
 def _invoices(*columns):
     return (
         select(
-            line.id.label("line_id"), line.doc_number, line.amount, line.status, line.line_date,
+            line.id.label("line_id"), line.doc_number, line.amount, line.status, line.line_date, line.due_date,
             Job.id.label("job_id"), OWNER, func.coalesce(customer.name, "the customer").label("customer"), *columns,
         )
         .join(Job, Job.id == line.job_id)
@@ -211,7 +213,8 @@ async def past_due(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> lis
             summary=f"{r.doc_number}, {r.days_late} days past due",
             detail=f"{r.doc_number} to {r.customer}: {money(r.open_amount)} open, {r.days_late} days past due.",
             next_step="Call the customer's payables contact and log the outcome.",
-            action_label="Log follow-up", owner=r.owner, job_id=r.job_id, evidence=[r.line_id],
+            action_label="Log follow-up", owner=r.owner, job_id=r.job_id, evidence=[r.line_id], document=r.doc_number,
+            due_on=r.due_date,
         )
         for r in rows
     ]
@@ -231,7 +234,7 @@ async def not_sent(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> lis
                 "not_sent", r.doc_number, r.amount,
                 summary=f"{r.doc_number}, {state}",
                 detail=f"{r.doc_number} to {r.customer} for {money(r.amount)}: {state}.",
-                next_step=step, action_label=label, owner=r.owner, job_id=r.job_id, evidence=[r.line_id],
+                next_step=step, action_label=label, owner=r.owner, job_id=r.job_id, evidence=[r.line_id], document=r.doc_number,
             )
         )
     return found
@@ -362,7 +365,7 @@ async def no_job(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[
             summary=f"{r.doc_number} from {r.vendor}",
             detail=f"{r.doc_number} from {r.vendor}, {money(r.amount)}, has no job assigned.",
             next_step="Assign it to a job or to overhead.",
-            action_label="Assign job", owner=r.owner, job_id=r.job_id, evidence=[r.line_id],
+            action_label="Assign job", owner=r.owner, job_id=r.job_id, evidence=[r.line_id], document=r.doc_number,
         )
         for r in rows
     ]
@@ -403,7 +406,7 @@ async def closed_month(db: AsyncSession, run: SyncRun, issue_type: IssueType) ->
                 "That month is closed and the ledger has no entry for it."
             ),
             next_step="Finance decides whether to reopen the month or book it now.",
-            action_label="Send to finance", owner=r.owner, job_id=r.job_id, evidence=[r.line_id],
+            action_label="Send to finance", owner=r.owner, job_id=r.job_id, evidence=[r.line_id], document=r.doc_number,
         )
         for r in rows
     ]
@@ -424,7 +427,7 @@ async def bill_overdue(db: AsyncSession, run: SyncRun, issue_type: IssueType) ->
                 ),
                 next_step="Release it for payment." if posted else "Retry the posting.",
                 action_label="Release payment" if posted else "Retry posting",
-                owner=r.owner, job_id=r.job_id, evidence=[r.line_id],
+                owner=r.owner, job_id=r.job_id, evidence=[r.line_id], document=r.doc_number, due_on=r.due_date,
             )
         )
     return found
@@ -448,7 +451,8 @@ async def discount(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> lis
                 f"{money(r.saving)} ({r.discount_pct:g}%)."
             ),
             next_step="Approve it before the deadline.",
-            action_label="Approve bill", owner=r.owner, job_id=r.job_id, evidence=[r.line_id],
+            action_label="Approve bill", owner=r.owner, job_id=r.job_id, evidence=[r.line_id], document=r.doc_number,
+            due_on=r.deadline,
         )
         for r in rows
     ]
@@ -489,7 +493,7 @@ async def record_findings(db: AsyncSession, run: SyncRun, findings: list[Finding
                 key=f.key, type_key=f.type_key, subject=f.subject, owner=f.owner,
                 status="open", first_seen_run_id=run.id, last_seen_run_id=run.id,
                 amount=f.amount, summary=f.summary, detail=f.detail, next_step=f.next_step,
-                action_label=f.action_label, job_id=f.job_id,
+                action_label=f.action_label, job_id=f.job_id, document=f.document, due_on=f.due_on,
             )
             db.add(issue)
             await db.flush()
@@ -506,6 +510,7 @@ async def record_findings(db: AsyncSession, run: SyncRun, findings: list[Finding
             issue.amount, issue.summary, issue.detail = f.amount, f.summary, f.detail
             issue.next_step, issue.action_label = f.next_step, f.action_label
             issue.job_id = f.job_id
+            issue.document, issue.due_on = f.document, f.due_on
             issue.last_seen_run_id = run.id
         await db.flush()
         await db.execute(delete(IssueEvidence).where(IssueEvidence.issue_id == issue.id))

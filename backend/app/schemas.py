@@ -129,6 +129,8 @@ class IssueResponse(BaseModel):
     job_number: str | None
     job_name: str | None
     subject: str
+    document: str | None = Field(description="The invoice or bill this is about. None for job-level issues")
+    due_on: date | None = Field(description="The date something has to happen by, when there is one")
     amount: Money
     summary: str
     detail: str
@@ -137,6 +139,7 @@ class IssueResponse(BaseModel):
     owner: str
     status: str
     resolution_note: str | None
+    note_count: int = Field(description="How many notes people have left on this issue")
     first_seen_run_id: int
     last_seen_run_id: int
     updated_at: datetime

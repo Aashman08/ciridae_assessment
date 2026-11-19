@@ -7,8 +7,9 @@ system that were never designed as one workflow. This service joins them into on
 record per job and reports where they disagree, so that nobody has to
 reconcile a job by hand to know whether it is finished and what it earned.
 
-This repository currently holds the **backend**. The web app comes next and
-will use only this API.
+The repository holds the **backend** (`backend/`), which does the
+reconciliation and serves an API, and the **web app** (`frontend/`), which
+uses only that API.
 
 ## Who it is for
 
@@ -33,11 +34,22 @@ psql -d harborstone -f source_data.sql
 cd backend
 ./run.sh
 
-# 3. Run the first sync
-curl -X POST localhost:8000/api/v1/sync-runs
+# 3. In a second terminal, start the web app
+cd frontend
+npm install
+npm run dev
 ```
 
-Interactive API docs are at http://localhost:8000/docs.
+Open http://localhost:5173. The first screen offers to run the first sync;
+after that, use **Sync now** in the top bar. Interactive API docs are at
+http://localhost:8000/docs.
+
+If port 8000 is taken, run the API elsewhere and tell the web app where:
+
+```bash
+cd backend && uv run uvicorn app.server:app --port 8010
+cd frontend && API_URL=http://localhost:8010 npm run dev
+```
 
 Settings are read from `backend/.env` (copied from `.env.example`):
 
@@ -54,7 +66,7 @@ Settings are read from `backend/.env` (copied from `.env.example`):
 cd backend && uv run pytest
 ```
 
-71 tests. Each run builds two databases of its own, `harborstone_test` from
+73 tests. Each run builds two databases of its own, `harborstone_test` from
 `source_data.sql` and an empty `harborstone_recon_test`, so the working
 databases are never touched. Every test module starts with our tables empty.
 Expected figures are tied to the export: for example $3,174,100 invoiced,
@@ -77,6 +89,32 @@ Everything is in `backend/app/`, one job per file.
 
 All database access is async. Schema changes go through Alembic migrations,
 which record what has been applied in `recon.alembic_version`.
+
+## The web app
+
+React, TypeScript, Vite and Tailwind, in `frontend/src/`.
+
+| Screen | What it is for |
+| --- | --- |
+| Overview | Finance sees cash owed, invoices not sent, unpaid bills, contract-to-cash totals and issues by type. An ops manager sees their own to-do list, largest first |
+| Jobs | Every job with the figures each system holds for it |
+| Job | Revenue and cost figures side by side. Pick one of each and the profit and margin for that pair appear beside them |
+| Issues | The work queue. **Log update** on a row records what someone has already done. It never contacts anyone or changes an invoice or bill. A note keeps the issue open; resolving is a separate choice |
+| Issue | What is wrong, what to do, the records behind it and the untouched source row for each, plus its history |
+| Customer invoices, Vendor bills | Every invoice and bill across jobs |
+| Issue types | The thirteen checks, with an on/off switch and tolerance for each |
+
+| Folder | Holds |
+| --- | --- |
+| `lib/` | `api.ts` (every call to the backend and the shapes it returns), formatting, who is viewing, sync |
+| `components/` | The app shell, the two shared tables, the resolve dialog and small building blocks |
+| `pages/` | One file per screen |
+
+The browser only talks to the Vite dev server, which passes `/api` on to the
+backend. Filters and paging live in the address bar, so a filtered list can be
+bookmarked. The design follows the unslop skill by Damir Sokolovsky
+(@heydamir): one grey ramp, one accent spent only on what needs a person, a 4px
+grid, one icon set, and figures set in a mono face so digits line up.
 
 ## How a sync works
 
@@ -159,9 +197,9 @@ such as `"246300.00"`. Errors always look like
 | Part | State |
 | --- | --- |
 | Connectors to live systems | Mocked. One connector reads the export; the pipeline only sees its interface |
-| Writing back to source systems | Not built. Actions are recorded in our database only |
+| Writing back to source systems | Not built. The app records what people did; it does not send invoices, approve bills or email customers |
 | Vendor inbox and documents | Copied as raw rows only; nothing in the API uses them. The export has subjects and file names but no bodies |
-| Web app | Not built yet |
+| Sign-in | Not built. A "Signed in as" switcher at the top of the sidebar stands in for it, and decides what every page shows |
 | AI assistance | Not built yet. It would call this API |
 
 ## Process

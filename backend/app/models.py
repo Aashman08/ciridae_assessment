@@ -23,9 +23,10 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    select,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, column_property, mapped_column, relationship
 
 RAW = "raw"
 RECON = "recon"
@@ -250,6 +251,11 @@ class Issue(Base):
     # Optional: a vendor bill with no job is itself an issue.
     job_id: Mapped[int | None] = mapped_column(ForeignKey(f"{RECON}.job.id", ondelete="CASCADE"), index=True)
     subject: Mapped[str] = mapped_column(String(60))
+    # The invoice or bill this is about, when it is about one. Job-level issues have none.
+    document: Mapped[str | None] = mapped_column(String(60))
+    # The date something has to happen by, when there is one: an invoice's or
+    # bill's due date, or the last day to pay and still get a discount.
+    due_on: Mapped[date | None] = mapped_column(Date)
     amount: Mapped[Decimal] = mapped_column(Money, default=0)
     summary: Mapped[str] = mapped_column(String(200))
     detail: Mapped[str] = mapped_column(Text)
@@ -300,3 +306,13 @@ class IssueEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     issue: Mapped[Issue] = relationship(back_populates="events", lazy="raise")
+
+
+# How many notes people have left on an issue. Counted by the database as part
+# of every issue read, so a list can show it without loading the history.
+Issue.note_count = column_property(
+    select(func.count(IssueEvent.id))
+    .where(IssueEvent.issue_id == Issue.id, IssueEvent.kind == "commented")
+    .correlate_except(IssueEvent)
+    .scalar_subquery()
+)

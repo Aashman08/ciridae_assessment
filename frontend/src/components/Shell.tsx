@@ -1,0 +1,254 @@
+import { useQuery } from '@tanstack/react-query'
+import { Check, ChevronRight, ChevronsUpDown, FileText, HardHat, LayoutDashboard, ListChecks, Receipt, TriangleAlert } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { api } from '../lib/api'
+import { dateTime, longDate } from '../lib/format'
+import { useLatestSync, useRunSync } from '../lib/sync'
+import { useTheme } from '../lib/theme'
+import type { Theme } from '../lib/theme'
+import { useViewer, VIEWERS } from '../lib/viewer'
+import { Button, Segmented } from './ui'
+
+interface Section {
+  to: string
+  label: string
+  icon: LucideIcon
+  /** Only for people who can change how issues are detected. */
+  managesChecks?: boolean
+}
+
+const SECTIONS: Section[] = [
+  { to: '/', label: 'Overview', icon: LayoutDashboard },
+  { to: '/jobs', label: 'Jobs', icon: HardHat },
+  { to: '/issues', label: 'Issues', icon: TriangleAlert },
+  { to: '/invoices', label: 'Customer invoices', icon: Receipt },
+  { to: '/bills', label: 'Vendor bills', icon: FileText },
+  { to: '/issue-types', label: 'Issue types', icon: ListChecks, managesChecks: true },
+]
+
+// One icon size and stroke everywhere, in the colour of the text around it.
+const ICON = { size: '1rem', strokeWidth: 1.5, 'aria-hidden': true } as const
+
+const ROW =
+  'grid h-9 shrink-0 grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 text-left text-ink-2 ' +
+  'transition-colors duration-150 ease-out hover:bg-raised hover:text-ink'
+const ROW_ACTIVE = 'bg-card text-ink ring-1 ring-hair ring-inset hover:bg-card'
+
+function Mark() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className="size-5 shrink-0">
+      <rect x="2" y="2" width="16" height="16" rx="4" className="fill-ink" />
+      <path
+        d="M6 10.5l2.5 2.5L14 7.5"
+        fill="none"
+        className="stroke-accent"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+const THEMES: { value: Theme; label: string }[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+]
+
+function Initial({ name }: { name: string }) {
+  return (
+    <span className="size-6 shrink-0 rounded-md bg-raised text-center text-xs leading-6 text-ink-2 ring-1 ring-hair ring-inset">
+      {name[0]}
+    </span>
+  )
+}
+
+/**
+ * Who is signed in. It sits above the navigation because it decides what every
+ * page below it shows; choosing someone else is like signing in as them.
+ */
+function AccountSwitcher() {
+  const { viewer, setViewer } = useViewer()
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function close(event: MouseEvent | KeyboardEvent) {
+      const escape = event instanceof KeyboardEvent && event.key === 'Escape'
+      const outside = event instanceof MouseEvent && !box.current?.contains(event.target as Node)
+      if (escape || outside) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', close)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', close)
+    }
+  }, [open])
+
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_1rem] items-center gap-2 rounded-lg bg-card p-2 text-left ring-1 ring-hair ring-inset transition-colors duration-150 ease-out hover:bg-raised"
+      >
+        <Initial name={viewer.name} />
+        <span className="min-w-0">
+          <span className="block truncate font-medium">{viewer.name}</span>
+          <span className="block truncate text-xs leading-4 text-muted">{viewer.sees}</span>
+        </span>
+        <ChevronsUpDown {...ICON} className="text-muted" />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label="Sign in as"
+          className="absolute inset-x-0 top-full z-10 mt-1 flex flex-col gap-0.5 rounded-xl border border-hair bg-card p-1 shadow-float"
+        >
+          {VIEWERS.map((person) => (
+            <button
+              key={person.key}
+              type="button"
+              role="menuitemradio"
+              aria-checked={person.key === viewer.key}
+              onClick={() => {
+                setViewer(person)
+                setOpen(false)
+                // Everything on screen belongs to the previous person, so start again from the top.
+                navigate('/')
+              }}
+              className="grid grid-cols-[1.5rem_minmax(0,1fr)_1rem] items-center gap-2 rounded-lg p-2 text-left transition-colors duration-150 ease-out hover:bg-raised"
+            >
+              <Initial name={person.name} />
+              <span className="min-w-0">
+                <span className="block truncate">{person.name}</span>
+                <span className="block truncate text-xs leading-4 text-muted">{person.sees}</span>
+              </span>
+              {person.key === viewer.key && <Check {...ICON} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Sidebar() {
+  const { viewer } = useViewer()
+  const [theme, setTheme] = useTheme()
+  const summary = useQuery({ queryKey: ['summary', viewer.owner], queryFn: () => api.summary(viewer.owner) })
+  const counts: Record<string, number | undefined> = {
+    '/jobs': summary.data?.job_count,
+    '/issues': summary.data?.open_issue_count,
+    '/invoices': summary.data?.cash.invoice_count,
+    '/bills': summary.data?.cash.vendor_bills_count,
+  }
+  const sections = SECTIONS.filter((section) => viewer.managesChecks || !section.managesChecks)
+
+  return (
+    <aside className="flex flex-col border-b border-hair bg-side px-4 py-3 md:sticky md:top-0 md:h-screen md:overflow-y-auto md:border-r md:border-b-0 md:px-3 md:py-4">
+      <Link to="/" className="flex h-9 items-center gap-2 px-2 text-base font-semibold">
+        <Mark />
+        Reconciliation
+      </Link>
+
+      <p className="hidden px-2 pt-6 pb-2 text-xs leading-4 text-muted md:block">Signed in as</p>
+      <div className="pt-2 md:pt-0">
+        <AccountSwitcher />
+      </div>
+
+      {/* The heading says exactly what the pages under it cover, so the scope is never a surprise. */}
+      <p className="hidden px-2 pt-6 pb-2 text-xs leading-4 text-muted md:block">{viewer.scope}</p>
+      <nav aria-label={viewer.scope} className="flex gap-1 overflow-x-auto pt-2 md:flex-col md:gap-0.5 md:overflow-visible md:pt-0">
+        {sections.map(({ to, label, icon: Icon }) => (
+          <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `${ROW} ${isActive ? ROW_ACTIVE : ''}`}>
+            <Icon {...ICON} className="text-muted" />
+            <span className="truncate">{label}</span>
+            <span className="font-mono text-xs text-muted tabular-nums">{counts[to] ?? ''}</span>
+          </NavLink>
+        ))}
+      </nav>
+
+      <div className="mt-auto flex flex-col gap-4 px-2 pt-3 md:pt-6">
+        <p className="hidden text-xs leading-4 text-muted md:block">
+          This app records what people did. It does not send invoices, approve bills or contact anyone.
+        </p>
+        <div>
+          <Segmented label="Theme" value={theme} options={THEMES} onChange={setTheme} />
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+function Crumb() {
+  const { pathname } = useLocation()
+  const [, first, second] = pathname.split('/')
+  const section = SECTIONS.find((s) => s.to === `/${first}`) ?? SECTIONS[0]
+  const Icon = section.icon
+
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-ink-2">
+      <Icon {...ICON} />
+      {second ? (
+        <>
+          <Link to={section.to} className="transition-colors duration-150 hover:text-ink">
+            {section.label}
+          </Link>
+          <ChevronRight {...ICON} />
+          <span className="truncate font-mono text-[0.8125rem] font-medium text-ink">{second}</span>
+        </>
+      ) : (
+        <span className="font-medium text-ink">{section.label}</span>
+      )}
+    </div>
+  )
+}
+
+function SyncControl() {
+  const latest = useLatestSync()
+  const sync = useRunSync()
+  const run = latest.data
+
+  return (
+    <div className="flex items-center gap-4">
+      {run && (
+        <p className="hidden text-right text-xs leading-4 text-muted lg:block">
+          Figures as of {longDate(run.as_of)}
+          <br />
+          Last synced {dateTime(run.finished_at ?? run.started_at)}
+        </p>
+      )}
+      <Button disabled={sync.isPending} onClick={() => sync.mutate()}>
+        {sync.isPending ? 'Syncing' : 'Sync now'}
+      </Button>
+    </div>
+  )
+}
+
+export function Shell() {
+  const { pathname } = useLocation()
+  return (
+    <div className="grid min-h-full grid-cols-1 md:grid-cols-[15.5rem_minmax(0,1fr)]">
+      <Sidebar />
+      <div className="flex min-w-0 flex-col">
+        <header className="flex h-14 items-center justify-between gap-4 border-b border-hair px-4 md:px-6">
+          <Crumb />
+          <SyncControl />
+        </header>
+        {/* Keyed on the path so the short entrance plays once per page, not on every refetch. */}
+        <main key={pathname} className="flex w-full animate-rise flex-col gap-6 px-4 pt-6 pb-12 md:px-6 md:pt-8 md:pb-16 2xl:px-8">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  )
+}

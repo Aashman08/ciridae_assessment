@@ -1,5 +1,6 @@
 """Sync step 4: what the checks find, and how issues behave across syncs."""
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -82,6 +83,25 @@ async def test_issue_reads_in_plain_words(recon):
     assert (await find(recon, "discount:ARS-20447")).summary == "ARS-20447, save $967 by Jul 30"
 
 
+async def test_each_fact_about_an_issue_is_its_own_field(recon):
+    """The document and the date are sent separately, not only inside a sentence."""
+    past_due = await find(recon, "past_due:INV-2026-0538")
+    assert (past_due.document, past_due.due_on) == ("INV-2026-0538", date(2026, 7, 14))
+
+    discount = await find(recon, "discount:ARS-20447")
+    assert (discount.document, discount.due_on) == ("ARS-20447", date(2026, 7, 30))  # last day for the discount
+
+    overdue_bill = await find(recon, "bill_overdue:ARS-20390")
+    assert (overdue_bill.document, overdue_bill.due_on) == ("ARS-20390", date(2026, 6, 29))
+
+    unsent = await find(recon, "not_sent:INV-2026-0590")
+    assert (unsent.document, unsent.due_on) == ("INV-2026-0590", None)
+
+    # A job-level issue is not about one document and has no deadline.
+    job_level = await find(recon, "cost_disagree:CTX00080002")
+    assert (job_level.document, job_level.due_on) == (None, None)
+
+
 async def test_issue_cites_the_money_lines_behind_it(recon):
     issue = await find(recon, "past_due:INV-2026-0538")
     assert [(e.kind, e.doc_number, e.open_amount) for e in issue.evidence] == [
@@ -127,6 +147,16 @@ async def test_assignment_and_comments_survive_a_resync(recon):
         ("opened", "system"), ("assigned", "Rachel Kim"), ("commented", "Jenna Okafor"),
     ]
     assert issue.events[-1].note == "Left a voicemail with their payables desk"
+
+
+async def test_a_note_keeps_the_issue_open_and_is_counted(recon):
+    """Logging a follow-up is not the same as fixing the problem."""
+    key = "past_due:INV-2026-0526"
+    assert (await find(recon, key)).note_count == 0
+    noted = await act(recon, key, action="comment", actor="Tasha Green", note="Called their payables desk")
+    assert (noted.status, noted.note_count) == ("open", 1)
+    listed = await recon.list_issues(IssueFilters(type="past_due", limit=50))
+    assert {i.key: i.note_count for i in listed.data}[key] == 1
 
 
 async def test_issue_clears_when_the_source_is_fixed_and_reopens_if_it_returns(recon, source):

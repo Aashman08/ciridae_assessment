@@ -24,6 +24,16 @@ Source lives in `backend/app/`:
 
 Migrations live in `backend/migrations/` and tests in `backend/tests/`.
 
+The web app is React, TypeScript, Vite and Tailwind, in `frontend/src/`:
+
+- `lib/api.ts` holds every call to the backend and the shapes it returns. Nothing
+  else calls `fetch`.
+- `lib/` also holds formatting, the current viewer and sync helpers.
+- `components/` holds the shell, the shared job and issue tables, the resolve
+  dialog and small building blocks in `ui.tsx`.
+- `pages/` holds one file per screen.
+- `index.css` holds the design tokens and the one shared table style.
+
 ## Build, Test, and Development Commands
 
 Run commands from `backend/`:
@@ -37,6 +47,44 @@ Run commands from `backend/`:
 
 Interactive API documentation is at `http://localhost:8000/docs`. Application
 startup applies any pending migrations.
+
+## Frontend Commands
+
+Run from `frontend/`:
+
+- `npm run dev`: start the web app on port 5173. It passes `/api` to the backend
+  at `API_URL`, which defaults to `http://localhost:8000`.
+- `npm run build`: type-check and build.
+- `npm run lint`: lint. Keep it at zero warnings.
+
+## Frontend Conventions
+
+- Colours, fonts and shadows come from the tokens in `index.css`. Do not write a
+  hex colour in a component.
+- Sizes are written in rem, never px, so the whole interface scales from one
+  value: `html { font-size }` in `index.css`, currently 112.5%. Only hairlines
+  under 4px (borders, rings, outlines) stay in px.
+- Every size and gap is a multiple of 4px at the default scale (0.25rem). One accent colour, used only for what
+  needs a person. One icon set (lucide) at 16px with a 1.5 stroke.
+- Sentence case everywhere, weights 400 to 600, no uppercase labels, no emoji.
+- Money is formatted by `money()` in `lib/format.ts` and nowhere else. Figures
+  use the mono face; words do not.
+- Profit, margin and totals are computed by the backend. The frontend never
+  re-derives them.
+- Filters and paging go in the URL search parameters.
+- A page is one column of full-width blocks that share the same left and right
+  edge. Do not hang a narrow panel off the side of a wider one; it leaves the
+  page lopsided. Lists are tables, styled like every other table.
+- In a table, one fact per column and one line per row. Do not stack two facts in
+  a cell (a name over its ID, a title over its detail), and do not join them in
+  a sentence either ("INV-2026-0538, 14 days past due"). If the API only has the
+  sentence, add the separate fields to the API.
+- A row that leads somewhere is clickable across its whole width, with a pointer
+  cursor. A button inside it stops the click from also opening the row.
+- Content fills the window. Do not cap the page width; a cap leaves a dead band on
+  wide monitors.
+- After changing a screen, open it in a browser at phone width, at 1440 and at
+  2000 wide, and in dark mode before calling it done.
 
 ## Coding Style & Naming Conventions
 
