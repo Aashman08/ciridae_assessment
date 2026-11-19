@@ -1,0 +1,71 @@
+# Ciridae Case Study: The First Step of a Transformation
+
+**Note.** Please read this document closely. We wrote clearly about the background and expectations of this exercise. The strongest candidates we've seen read the document closely before starting.
+
+## 1. Context
+
+Ciridae transforms businesses. We replace the patchwork of legacy ERPs, spreadsheets, and manual workflows businesses run on with operating systems that accelerate them.
+
+You will be experiencing the first step of how we start a transformation. You are given:
+
+1. **A one-pager on the business**: who they are, how they operate, and where they are today.
+2. **A messy SQL dump**: taken and anonymized from a bona fide customer engagement. It mimics the fragmented state the business's systems were in before we began working with them. It is a standalone PostgreSQL dump (PostgreSQL 15+ recommended); restore with `createdb harborstone` then `psql -d harborstone -f source_data.sql`.
+
+This business runs on systems that got them to where they are today, but those systems are not getting them to where they want to be. Your role is to paint the picture of how this business can grow 5x on a Ciridae operating system.
+
+You'll likely know less about this domain than your future customer does. That's the job. You're encouraged to use whatever tools you have to come up to speed. The one-pager and the data itself have seeded enough vocabulary for you to start asking the right questions.
+
+## 2. The Task
+
+Produce a **demo** that:
+
+- Demonstrates to the customer how their business can be transformed: identify the highest-return opportunities in their data and operations, and show what the next evolution of their software looks like.
+- Makes clear which stakeholder—or someone on their team—the experience is designed for and what decision, important work, action, or outcome it is intended to support.
+- Aligns stakeholders and serves as the starting point for an in-depth discussion.
+- Demonstrates your competence, technical accuracy, and product sense.
+
+This is a very open-ended task. Done fully, it could take days or weeks. **We expect you to cover a small fraction of what's possible. We're evaluating what you chose given the constraints and why.** We will also give you time to explain what capabilities you would build next and how the product could evolve with much more time. You do not need to build or mock the broader vision, though you may use HTML mockups, Claude Designs, sketches, or other media if they help communicate it.
+
+As a guideline, we expect around **4 hours of concentrated effort**. If you're short on time, we won't hold it against you, as long as you can clearly walk us through what you did, what you'd do next, and what you'd do differently.
+
+### It's a demo. Please be creative!
+
+Because this is a demo, it doesn't have to be full production software.
+
+- You decide which systems you actually connect to. If there are external systems that you may want to connect to demonstrate the full flow, feel free to mock things, seed data, or do whatever else you need.
+- As you are doing this, navigate the tradeoffs between moving fast and having a reasonably robust piece of software.
+- Feel free to set expectations inside the app, in whatever way you'd like, to demonstrate what is—and is not—fully working.
+
+Working and production-grade are different standards. We do not expect production quality: you may skip deployment, authentication, exhaustive testing, edge-case handling, and live external integrations. We do expect the core experience you choose to demonstrate to work on your laptop, and we will click and interact with it during the review. Clearly label any mocked or unbuilt parts of the broader vision.
+
+## 3. Stack
+
+Use whatever stack you're the fastest in. We've laid our stack below as a reference. We'd also love to see any model/agent usecases integrated into the app (it has to provide real ROI though!). Ciridae will reimburse LLM API calls for up to 200 dollars for these usecases.
+
+**Our Stack:** Python, FastAPI, uv; Postgres; React, TypeScript, Vite; shadcn/ui, Tailwind. For agentic pieces, we like the OpenAI Agents SDK.
+
+Use Claude Code, Cursor, Codex, or whatever you prefer for AI assistance. We'd be curious to hear about your process.
+
+## 4. The Deliverable
+
+Please send your GitHub repo to warren@ciridae.com. Document any design decisions and the process by which you produced this work here.
+
+Our team will review your submission, including the code and your approach. If we decide to move forward, you’ll be invited to an hour-long conversation with our engineering team to present your work and discuss your decisions.
+
+That conversation will be structured like a customer session:
+
+1. **Demo walkthrough (first 10–15 minutes).** Walk us through what you've built.
+2. **Customer Q&A.** We'll play your customer's stakeholders and ask questions as they would.
+3. **Developer Q&A.** We'll take the customer hat off and ask about your decisions and design choices.
+
+When something is ambiguous, make a call and document your reasoning; we care more about your judgment than the "right" answer.
+
+## Be proud of your work
+
+Two things to note about the process:
+
+**You and your work.** We'll close by talking more broadly about what you've worked on and how you think.
+
+**Be proud of your work.** We expect you to use as much assistance from whatever tools at your disposal that you need. But we expect you to own every decision made.
+
+
