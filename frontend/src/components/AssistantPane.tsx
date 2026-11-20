@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Copy, RotateCcw, SendHorizontal, X } from 'lucide-react'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { Coding, Draft, Item } from '../lib/api'
@@ -11,11 +11,13 @@ import { FOLLOW_UP_WORKING_DAYS } from '../lib/items'
 import { composeUrl, useMailApp } from '../lib/mail'
 import { useViewer } from '../lib/viewer'
 import { Composer, Messages, Working } from './Conversation'
+import { DocumentView } from './DocumentView'
 import { Button, ErrorNote } from './ui'
 
 const ICON = { size: '1rem', strokeWidth: 1.5, 'aria-hidden': true } as const
 
 const TITLES = { chat: 'Ask AI', draft: 'Follow-up draft', coding: 'Which job is this bill for' } as const
+const DOCUMENTS = { customer_invoice: 'Customer invoice', vendor_bill: 'Vendor bill' } as const
 
 /** The assistant, asked from whatever page is open. It is told which page that is. */
 function Chat() {
@@ -70,6 +72,7 @@ function Compose({ item, message, onAgain }: { item: Item; message: Draft; onAga
   const client = useQueryClient()
   const [mail] = useMailApp()
   const [to, setTo] = useState(message.recipient.email ?? '')
+  const [cc, setCc] = useState(message.recipient.cc.map((person) => person.email).filter(Boolean).join(', '))
   const [subject, setSubject] = useState(message.subject)
   const [body, setBody] = useState(message.body)
   const [opened, setOpened] = useState(false)
@@ -91,14 +94,14 @@ function Compose({ item, message, onAgain }: { item: Item; message: Draft; onAga
 
   function send() {
     // The message is handed to the person's own email, where they press send. This app cannot send mail.
-    const url = composeUrl(mail.key, { to: to.trim(), subject, body })
+    const url = composeUrl(mail.key, { to: to.trim(), cc: cc.trim(), subject, body })
     if (mail.key === 'default') window.location.href = url
     else window.open(url, '_blank', 'noopener')
     setOpened(true)
   }
 
   async function copy() {
-    await navigator.clipboard.writeText(`To: ${to}\nSubject: ${subject}\n\n${body}`)
+    await navigator.clipboard.writeText(`To: ${to}\n${cc ? `Cc: ${cc}\n` : ''}Subject: ${subject}\n\n${body}`)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -127,6 +130,10 @@ function Compose({ item, message, onAgain }: { item: Item; message: Draft; onAga
             placeholder="No address on file. Type one"
             className={field}
           />
+        </label>
+        <label className="flex items-center gap-3 border-b border-hair px-4 py-2 text-[0.8125rem]">
+          <span className="text-muted">Cc</span>
+          <input value={cc} onChange={(event) => setCc(event.target.value)} className={field} />
         </label>
         <label className="flex items-center gap-3 border-b border-hair px-4 py-2 text-[0.8125rem]">
           <span className="text-muted">Subject</span>
@@ -164,6 +171,14 @@ function Compose({ item, message, onAgain }: { item: Item; message: Draft; onAga
         <dd>{message.recipient.name}</dd>
         <dt className="text-ink-2">Why them</dt>
         <dd>{message.recipient.role}</dd>
+        {message.recipient.cc.map((person) => (
+          <Fragment key={person.name}>
+            <dt className="text-ink-2">Copied</dt>
+            <dd>
+              {person.name}, {person.role.charAt(0).toLowerCase() + person.role.slice(1)}
+            </dd>
+          </Fragment>
+        ))}
         <dt className="text-ink-2">Sends with</dt>
         <dd className="flex flex-wrap items-center gap-x-2">
           {mail.logo && <img src={mail.logo} alt="" className="size-4 object-contain" />}
@@ -392,14 +407,15 @@ function CodingSuggestion({ item }: { item: Item }) {
 export function AssistantPane() {
   const { view, close } = useAssistant()
   if (!view) return null
+  const title = view.kind === 'document' ? DOCUMENTS[view.documentKind] : TITLES[view.kind]
 
   return (
     <aside
-      aria-label={TITLES[view.kind]}
+      aria-label={title}
       className="fixed inset-y-0 right-0 z-30 flex w-full flex-col border-l border-hair bg-bg shadow-float sm:w-[26rem] 2xl:sticky 2xl:top-0 2xl:z-auto 2xl:h-dvh 2xl:w-auto 2xl:shadow-none"
     >
       <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-hair px-4">
-        <h2 className="font-medium">{TITLES[view.kind]}</h2>
+        <h2 className="font-medium">{title}</h2>
         <button
           type="button"
           aria-label="Close"
@@ -413,6 +429,7 @@ export function AssistantPane() {
       {/* Keyed on the item so each one gets its own draft or suggestion. */}
       {view.kind === 'draft' && <DraftPreview key={view.item.key} item={view.item} />}
       {view.kind === 'coding' && <CodingSuggestion key={view.item.key} item={view.item} />}
+      {view.kind === 'document' && <DocumentView key={view.lineId} lineId={view.lineId} />}
     </aside>
   )
 }

@@ -127,6 +127,63 @@ class LineResponse(BaseModel):
     source_record_id: int
 
 
+# --- Documents -----------------------------------------------------------------
+
+
+class DocumentParty(BaseModel):
+    name: str
+    attention: str | None = Field(None, description="The person the document is addressed to")
+    title: str | None = None
+    email: str | None = None
+    address: list[str] = Field(default_factory=list, description="Address lines, top to bottom")
+
+
+class DocumentLine(BaseModel):
+    description: str
+    quantity: Decimal | None
+    unit_price: Money | None
+    amount: Money
+
+
+class DocumentPayment(BaseModel):
+    on: date | None
+    amount: Money
+    method: str | None
+    reference: str | None
+
+
+class DocumentResponse(BaseModel):
+    """An invoice or vendor bill laid out from its records, as the paper copy would be.
+    Built from the source rows; it is not the original PDF."""
+
+    line_id: int
+    kind: Literal["customer_invoice", "vendor_bill"]
+    number: str
+    status: str | None
+    issued_on: date | None
+    due_on: date | None
+    approved_on: date | None = None
+    sent_on: date | None = None
+    terms: str | None = Field(description="Payment terms in words, worked out from the dates")
+    discount: str | None = Field(None, description="An early-payment discount the vendor offers, in words")
+    issuer: DocumentParty
+    recipient: DocumentParty
+    job_number: str | None
+    job_name: str | None
+    site: list[str] = Field(default_factory=list, description="The job site's address")
+    lines: list[DocumentLine]
+    subtotal: Money
+    tax: Money
+    total: Money
+    paid: Money
+    balance: Money
+    payments: list[DocumentPayment]
+    files: list[str] = Field(description="Files held for this document, by name")
+    received_by_email: str | None = Field(None, description="For a bill: who emailed it and the subject")
+    notes: list[str]
+    source_record_id: int
+
+
 # --- Issues --------------------------------------------------------------------
 
 
@@ -813,6 +870,12 @@ class DraftRequest(BaseModel):
     writer: str = Field(min_length=1, max_length=120, description="Who will send the message. It is signed with their name")
 
 
+class Copied(BaseModel):
+    name: str
+    role: str = Field(description="Why they are copied")
+    email: str | None
+
+
 class Recipient(BaseModel):
     """Who a follow-up goes to. Chosen from the records by fixed rules, never by the model."""
 
@@ -820,6 +883,7 @@ class Recipient(BaseModel):
     name: str
     role: str = Field(description="Why they are the person to write to")
     email: str | None = Field(description="None when the records hold no address for them")
+    cc: list[Copied] = Field(default_factory=list, description="People copied in, such as the person named on the invoice")
 
 
 class DraftReply(BaseModel):

@@ -1,7 +1,8 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { Card, Empty, Loaded, PageHead, Pager, Segmented, Select } from '../components/ui'
 import { api } from '../lib/api'
+import { useAssistant } from '../lib/assistant'
 import type { Line } from '../lib/api'
 import { daysBetween, money, shortDate, words } from '../lib/format'
 import { useViewer } from '../lib/viewer'
@@ -39,8 +40,17 @@ function JobCell({ line }: { line: Line }) {
   )
 }
 
-function InvoiceRows({ lines, asOf }: { lines: Line[]; asOf: string }) {
-  const navigate = useNavigate()
+function InvoiceRows({
+  lines,
+  asOf,
+  onOpen,
+  showing,
+}: {
+  lines: Line[]
+  asOf: string
+  onOpen: (line: Line) => void
+  showing: number | null
+}) {
   return (
     <table className="data-table">
       <thead>
@@ -61,7 +71,7 @@ function InvoiceRows({ lines, asOf }: { lines: Line[]; asOf: string }) {
           const sent = line.status === 'SENT'
           const late = sent && Number(line.open_amount) > 0 && line.due_date !== null && line.due_date < asOf
           return (
-            <tr key={line.id} className="clickable" onClick={() => line.job_number && navigate(`/jobs/${line.job_number}`)}>
+            <tr key={line.id} className={`clickable ${showing === line.id ? 'bg-raised' : ''}`} onClick={() => onOpen(line)}>
               <td className="font-mono text-[0.8125rem]">{line.doc_number}</td>
               <td>{line.company}</td>
               <td>
@@ -81,8 +91,7 @@ function InvoiceRows({ lines, asOf }: { lines: Line[]; asOf: string }) {
   )
 }
 
-function BillRows({ lines }: { lines: Line[] }) {
-  const navigate = useNavigate()
+function BillRows({ lines, onOpen, showing }: { lines: Line[]; onOpen: (line: Line) => void; showing: number | null }) {
   return (
     <table className="data-table">
       <thead>
@@ -98,11 +107,7 @@ function BillRows({ lines }: { lines: Line[] }) {
       </thead>
       <tbody>
         {lines.map((line) => (
-          <tr
-            key={line.id}
-            className={line.job_number ? 'clickable' : undefined}
-            onClick={() => line.job_number && navigate(`/jobs/${line.job_number}`)}
-          >
+          <tr key={line.id} className={`clickable ${showing === line.id ? 'bg-raised' : ''}`} onClick={() => onOpen(line)}>
             <td className="font-mono text-[0.8125rem]">{line.doc_number}</td>
             <td>{line.company ?? line.description}</td>
             <td>
@@ -119,7 +124,7 @@ function BillRows({ lines }: { lines: Line[] }) {
   )
 }
 
-/** Customer invoices or vendor bills across jobs, largest open amount first. */
+/** Customer invoices or vendor bills across jobs, largest open amount first. Clicking one opens it as a document. */
 export function Lines({ kind }: { kind: 'customer_invoice' | 'vendor_bill' }) {
   const { viewer } = useViewer()
   const [params, setParams] = useSearchParams()
@@ -128,6 +133,9 @@ export function Lines({ kind }: { kind: 'customer_invoice' | 'vendor_bill' }) {
   const balance = params.get('balance') ?? ''
   const noJob = params.get('no_job') ?? ''
   const invoices = kind === 'customer_invoice'
+  const { view, show } = useAssistant()
+  const open = (line: Line) => show({ kind: 'document', lineId: line.id, documentKind: kind })
+  const showing = view?.kind === 'document' ? view.lineId : null
   const filtered = Boolean(status || balance || noJob)
 
   // Filters and paging live in the address, so a filtered list can be bookmarked or sent to someone.
@@ -181,7 +189,11 @@ export function Lines({ kind }: { kind: 'customer_invoice' | 'vendor_bill' }) {
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  {invoices ? <InvoiceRows lines={page.data} asOf={summary.data?.as_of ?? ''} /> : <BillRows lines={page.data} />}
+                  {invoices ? (
+                    <InvoiceRows lines={page.data} asOf={summary.data?.as_of ?? ''} onOpen={open} showing={showing} />
+                  ) : (
+                    <BillRows lines={page.data} onOpen={open} showing={showing} />
+                  )}
                 </div>
                 <Pager
                   offset={offset}

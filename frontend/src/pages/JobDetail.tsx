@@ -5,6 +5,7 @@ import { NextSteps } from '../components/NextSteps'
 import { Card, CardHead, Empty, Facts, Loaded, PageHead } from '../components/ui'
 import { api } from '../lib/api'
 import type { CostBasis, FigureOption, JobDetail as Job, Line, RevenueBasis } from '../lib/api'
+import { useAssistant } from '../lib/assistant'
 import { money, percent, shortDate, stage, words } from '../lib/format'
 
 interface FigurePickerProps<Basis extends string> {
@@ -130,7 +131,11 @@ interface DocumentsProps {
   vendor?: boolean
 }
 
+/** A job's invoices or bills. Clicking one opens it laid out as a document. */
 function Documents({ title, lines, empty, vendor = false }: DocumentsProps) {
+  const { view, show } = useAssistant()
+  const open = (line: Line) => show({ kind: 'document', lineId: line.id, documentKind: vendor ? 'vendor_bill' : 'customer_invoice' })
+  const showing = view?.kind === 'document' ? view.lineId : null
   return (
     <Card>
       <CardHead title={title} />
@@ -151,8 +156,24 @@ function Documents({ title, lines, empty, vendor = false }: DocumentsProps) {
             </thead>
             <tbody>
               {lines.map((line) => (
-                <tr key={line.id}>
-                  <td className="font-mono text-[0.8125rem]">{line.doc_number}</td>
+                <tr
+                  key={line.id}
+                  className={`clickable ${showing === line.id ? 'bg-raised' : ''}`}
+                  aria-current={showing === line.id || undefined}
+                  onClick={() => open(line)}
+                >
+                  <td className="font-mono text-[0.8125rem]">
+                    {/* The button keeps the row reachable by keyboard; the row click covers everywhere else. */}
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        open(line)
+                      }}
+                    >
+                      {line.doc_number}
+                    </button>
+                  </td>
                   {vendor && <td>{line.company ?? line.description}</td>}
                   <td className="text-ink-2">{words(line.status)}</td>
                   <td className="text-ink-2">{shortDate(line.due_date)}</td>

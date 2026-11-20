@@ -59,11 +59,12 @@ export function useMailApp(): [MailApp, (key: MailApp['key']) => void] {
 }
 
 /** The address that opens a new message in the chosen account, already filled in. */
-export function composeUrl(app: MailApp['key'], message: { to: string; subject: string; body: string }): string {
+export function composeUrl(app: MailApp['key'], message: { to: string; cc?: string; subject: string; body: string }): string {
   const to = encodeURIComponent(message.to)
+  const cc = message.cc ? encodeURIComponent(message.cc) : ''
   const subject = encodeURIComponent(message.subject)
   const body = encodeURIComponent(message.body)
-  if (app === 'gmail') return `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subject}&body=${body}`
-  if (app === 'outlook') return `https://outlook.office.com/mail/deeplink/compose?to=${to}&subject=${subject}&body=${body}`
-  return `mailto:${to}?subject=${subject}&body=${body}`
+  if (app === 'gmail') return `https://mail.google.com/mail/?view=cm&fs=1&to=${to}${cc && `&cc=${cc}`}&su=${subject}&body=${body}`
+  if (app === 'outlook') return `https://outlook.office.com/mail/deeplink/compose?to=${to}${cc && `&cc=${cc}`}&subject=${subject}&body=${body}`
+  return `mailto:${to}?${cc && `cc=${cc}&`}subject=${subject}&body=${body}`
 }

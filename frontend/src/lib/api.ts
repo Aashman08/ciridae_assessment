@@ -342,7 +342,14 @@ export interface AskPage {
 
 /** A follow-up message for a person to read, change and send themselves. */
 export interface Draft {
-  recipient: { audience: 'customer' | 'internal'; name: string; role: string; email: string | null }
+  recipient: {
+    audience: 'customer' | 'internal'
+    name: string
+    role: string
+    email: string | null
+    /** People copied in, such as the person named on the invoice when that is someone else. */
+    cc: { name: string; role: string; email: string | null }[]
+  }
   subject: string
   body: string
   /** Things to check before sending, such as a figure that is not in the records. */
@@ -424,6 +431,44 @@ export interface Finance {
   ledger_cost_accounts: string[]
   receivables_by_age: { bucket: 'not_due' | 'late_1_30' | 'late_31_60' | 'late_over_60'; invoices: number; amount: Money }[]
   by_service_line: { service_line: string; jobs: number; revenue: Money; cost: Money; profit: Money; margin_pct: string | null }[]
+}
+
+export interface DocumentParty {
+  name: string
+  attention: string | null
+  title: string | null
+  email: string | null
+  address: string[]
+}
+
+/** An invoice or vendor bill laid out from its records, as the paper copy would be. Not the original file. */
+export interface Document {
+  line_id: number
+  kind: 'customer_invoice' | 'vendor_bill'
+  number: string
+  status: string | null
+  issued_on: string | null
+  due_on: string | null
+  approved_on: string | null
+  sent_on: string | null
+  terms: string | null
+  discount: string | null
+  issuer: DocumentParty
+  recipient: DocumentParty
+  job_number: string | null
+  job_name: string | null
+  site: string[]
+  lines: { description: string; quantity: string | null; unit_price: Money | null; amount: Money }[]
+  subtotal: Money
+  tax: Money
+  total: Money
+  paid: Money
+  balance: Money
+  payments: { on: string | null; amount: Money; method: string | null; reference: string | null }[]
+  files: string[]
+  received_by_email: string | null
+  notes: string[]
+  source_record_id: number
 }
 
 /** One of Harborstone's systems, as we last read it. */
@@ -552,4 +597,5 @@ export const api = {
   clearAskHistory: (askedBy: string) => request<void>(`/ask/history${query({ asked_by: askedBy })}`, { method: 'DELETE' }),
 
   sourceRecord: (id: number) => request<SourceRecord>(`/source-records/${id}`),
+  document: (lineId: number) => request<Document>(`/lines/${lineId}/document`),
 }

@@ -17,6 +17,7 @@ from app.schemas import (
     IssueFilters,
     IssueResponse,
     CodingResponse,
+    DocumentResponse,
     DraftRequest,
     FinanceResponse,
     OperationsResponse,
@@ -162,6 +163,18 @@ async def list_job_lines(
 async def list_lines(filters: Annotated[LineFilters, Query()], request: Request) -> ListResponse[LineResponse]:
     async with create_recon_client(request.state.request_id) as client:
         return await client.list_lines(filters)
+
+
+@router.get(
+    "/lines/{line_id}/document",
+    tags=["Invoices and Bills"],
+    summary="An invoice or vendor bill laid out from its records, as the paper copy would be",
+    response_model=DocumentResponse,
+    responses={404: ERROR_404},
+)
+async def get_document(line_id: int, request: Request) -> DocumentResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.get_document(line_id)
 
 
 @router.get(

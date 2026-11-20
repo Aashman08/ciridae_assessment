@@ -7,7 +7,7 @@ transaction for one request, and calls the pipeline steps and serializers.
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TypeVar
 
@@ -79,7 +79,12 @@ from app.schemas import (
     OwnerLoad,
     UrgentStart,
     WaitingStart,
+    Copied,
     CountedOnce,
+    DocumentLine,
+    DocumentParty,
+    DocumentPayment,
+    DocumentResponse,
     FinanceMonth,
     FinanceResponse,
     ReceivableAge,
@@ -164,6 +169,11 @@ def owned_by(owner: str):
         JobOwner.role == "ops_manager",
         func.lower(JobOwner.name) == owner.lower(),
     )
+
+
+def to_day(value) -> date | None:
+    """The date part of a source timestamp."""
+    return date.fromisoformat(str(value)[:10]) if value else None
 
 
 def _person(email: str | None) -> str:
@@ -1016,13 +1026,24 @@ class ReconClient:
                     .where(Job.job_number == item.job_number)
                 )
             ).one_or_none()
+            # The invoice names its own person. When that is not the billing contact, they are copied in.
+            copied: list[Copied] = []
+            invoice = next(iter((await self._raw_where("ar_invoices", "invoice_number", item.document or ""))), {})
+            on_invoice = (await self._raw("contacts", [invoice.get("contact_id") or ""])).get(invoice.get("contact_id") or "")
+            billing_id = row.payload.get("id") if row else None
+            if on_invoice and on_invoice.get("id") != billing_id:
+                copied.append(Copied(
+                    name=" ".join(p for p in (on_invoice.get("first_name"), on_invoice.get("last_name")) if p),
+                    role=f"Named on invoice {item.document}" + (f", {on_invoice['title']}" if on_invoice.get("title") else ""),
+                    email=on_invoice.get("email"),
+                ))
             if row:
                 name = " ".join(part for part in (row.payload.get("first_name"), row.payload.get("last_name")) if part)
                 return Recipient(
                     audience="customer", name=name or row.name,
-                    role=f"Billing contact at {row.name}", email=row.payload.get("email"),
+                    role=f"Billing contact at {row.name}", email=row.payload.get("email"), cc=copied,
                 )
-            return Recipient(audience="customer", name="Accounts payable", role="The customer's payables desk", email=None)
+            return Recipient(audience="customer", name="Accounts payable", role="The customer's payables desk", email=None, cc=copied)
 
         if item.kind in SCHEDULE_KINDS and item.job_number:
             people = dict(
@@ -1257,6 +1278,158 @@ class ReconClient:
             ],
             by_service_line=by_kind,
         )
+
+    async def get_document(self, line_id: int) -> DocumentResponse:
+        """An invoice or vendor bill laid out from its records: who it is from and to, its
+        lines, totals and payments. Built from the copied source rows, not the original file."""
+        line = await self.db.scalar(
+            select(MoneyLine)
+            .where(MoneyLine.id == line_id, MoneyLine.kind.in_((INVOICE, BILL)))
+            .options(selectinload(MoneyLine.job), selectinload(MoneyLine.company))
+        )
+        if line is None:
+            raise SourceRecordNotFoundError(line_id)
+        rows = await self._raw(line.source_table, [line.source_pk])
+        doc = rows.get(line.source_pk, {})
+
+        invoice = line.kind == INVOICE
+        child = "ar_invoice_lines" if invoice else "ap_invoice_lines"
+        parts = [p for p in await self._raw_where(child, "invoice_id", line.source_pk)]
+        payments = await self._raw_where("ar_payments", "invoice_id", line.source_pk) if invoice else []
+
+        entities = await self._raw("legal_entities", [doc.get("legal_entity_id") or ""])
+        entity = entities.get(doc.get("legal_entity_id") or "")
+        us = DocumentParty(
+            # Three bills carry no legal entity. Say so, rather than guess which company was billed.
+            name=(entity or {}).get("legal_name") or (entity or {}).get("name") or "No legal entity on record",
+            address=await self._address((entity or {}).get("billing_address_id")),
+        )
+
+        company_id = (line.company.source_id if line.company else None) or doc.get("company_id") or doc.get("vendor_id")
+        company = (await self._raw("companies", [company_id or ""])).get(company_id or "", {})
+        contact_id = doc.get("contact_id") if invoice else doc.get("vendor_contact_id")
+        contact = (await self._raw("contacts", [contact_id or ""])).get(contact_id or "", {})
+        them = DocumentParty(
+            name=company.get("name") or (line.company.name if line.company else doc.get("vendor_name") or "Unknown"),
+            attention=" ".join(p for p in (contact.get("first_name"), contact.get("last_name")) if p) or None,
+            title=contact.get("title"), email=contact.get("email"),
+            address=await self._address(company.get("address_id")),
+        )
+
+        site: list[str] = []
+        if line.job:
+            opportunity = (await self._raw("opportunities", [doc.get("opportunity_id") or ""])).get(doc.get("opportunity_id") or "", {})
+            site = await self._address(opportunity.get("address_id"))
+
+        issued, due = to_day(doc.get("invoice_date")), to_day(doc.get("due_date"))
+        terms = f"Net {(due - issued).days}" if issued and due else None
+        discount = None
+        if not invoice and company_id:
+            for term in await self._raw_where("vendor_discount_terms", "company_id", company_id):
+                deadline = issued + timedelta(days=int(term["discount_days"])) if issued else None
+                discount = (
+                    f"{Decimal(str(term['discount_percentage'])).normalize()}% off if paid within {term['discount_days']} days"
+                    + (f", by {deadline:%d %B %Y}" if deadline else "")
+                )
+
+        files: list[str] = []
+        received = None
+        if invoice:
+            for link in await self._raw_where("ar_invoice_documents", "invoice_id", line.source_pk):
+                files.append(f"{(link.get('document_type') or 'Document').title()} PDF")
+        elif line.doc_number:
+            attachment = aliased(SourceRecord)
+            mail = (
+                await self.db.execute(
+                    select(SourceRecord.payload, attachment.payload)
+                    .outerjoin(
+                        attachment,
+                        and_(attachment.table_name == "inbound_email_attachments", attachment.payload["inbound_email_id"].astext == SourceRecord.source_pk),
+                    )
+                    .where(
+                        SourceRecord.table_name == "inbound_emails",
+                        or_(
+                            SourceRecord.payload["subject"].astext.ilike(f"%{line.doc_number}%"),
+                            attachment.payload["filename"].astext.ilike(f"{line.doc_number}.%"),
+                        ),
+                    )
+                    .limit(1)
+                )
+            ).first()
+            if mail:
+                email, file = mail
+                received = f"Emailed by {email.get('from_email')} on {str(email.get('received_at'))[:10]}: {email.get('subject')}"
+                if file:
+                    files.append(file.get("filename"))
+
+        def money_of(value) -> Decimal:
+            return Decimal(str(value)) if value not in (None, "") else ZERO
+
+        total = money_of(doc.get("total") if invoice else doc.get("amount")) or line.amount
+        tax = money_of(doc.get("tax_amount"))
+        paid = line.paid_amount
+        notes = [n.get("content") for n in await self._raw_where("ar_invoice_notes", "invoice_id", line.source_pk)] if invoice else []
+        if doc.get("notes"):
+            notes.insert(0, doc["notes"])
+
+        return DocumentResponse(
+            line_id=line.id,
+            kind=line.kind,
+            number=line.doc_number or "",
+            status=line.status,
+            issued_on=issued, due_on=due,
+            approved_on=to_day(doc.get("approval_date")), sent_on=to_day(doc.get("sent_date")),
+            terms=terms, discount=discount,
+            issuer=us if invoice else them,
+            recipient=them if invoice else us,
+            job_number=line.job.job_number if line.job else None,
+            job_name=line.job.name if line.job else None,
+            site=site,
+            lines=[
+                DocumentLine(
+                    description=p.get("description") or "",
+                    quantity=Decimal(str(p["quantity"])) if p.get("quantity") is not None else None,
+                    unit_price=money_of(p.get("unit_price")) if p.get("unit_price") is not None else None,
+                    amount=money_of(p.get("amount")),
+                )
+                for p in parts
+            ],
+            subtotal=money_of(doc.get("subtotal")) or total - tax,
+            tax=tax, total=total, paid=paid, balance=total - paid,
+            payments=[
+                DocumentPayment(
+                    on=to_day(p.get("payment_date")), amount=money_of(p.get("amount")),
+                    method=p.get("payment_method"), reference=p.get("reference_number"),
+                )
+                for p in sorted(payments, key=lambda p: str(p.get("payment_date")))
+            ],
+            files=files, received_by_email=received, notes=[n for n in notes if n],
+            source_record_id=line.source_record_id,
+        )
+
+    async def _raw(self, table: str, keys: list[str]) -> dict[str, dict]:
+        """Copied source rows from one table, by their key in the source system."""
+        found = await self.db.execute(
+            select(SourceRecord.source_pk, SourceRecord.payload).where(SourceRecord.table_name == table, SourceRecord.source_pk.in_(keys))
+        )
+        return dict(found.all())
+
+    async def _raw_where(self, table: str, field: str, value: str) -> list[dict]:
+        found = await self.db.scalars(
+            select(SourceRecord.payload)
+            .where(SourceRecord.table_name == table, SourceRecord.payload[field].astext == value)
+            .order_by(SourceRecord.id)
+        )
+        return list(found)
+
+    async def _address(self, address_id: str | None) -> list[str]:
+        """An address as the lines it is printed on."""
+        found = (await self._raw("addresses", [address_id or ""])).get(address_id or "")
+        if not found:
+            return []
+        street = ", ".join(p for p in (found.get("street_address"), found.get("unit")) if p)
+        town = " ".join(p for p in (f"{found.get('city')}," if found.get("city") else None, found.get("state"), found.get("zip_code")) if p)
+        return [p for p in (street, town) if p]
 
     async def list_sources(self) -> list[SourceSystem]:
         """The three systems the figures come from, with how much of each we hold and when it was last read."""

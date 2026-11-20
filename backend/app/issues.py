@@ -48,8 +48,8 @@ ISSUE_TYPES = [
      "An invoice is approved, still a draft, or failed to reach accounting."),
     ("over_contract", "Cost above contract", "high", "cost", None, None,
      "The budget or the cost so far is higher than the contract value."),
-    ("closed_month", "Bill in a closed month, not in ledger", "high", "cash", None, None,
-     "A vendor bill is dated in a month finance has closed and has no ledger entry."),
+    ("closed_month", "Bill in a closed month, not booked", "high", "cash", None, None,
+     "A vendor bill is dated in a month finance has closed and has not been posted, so that month's cost is short."),
     ("cost_disagree", "Ops and ledger cost disagree", "medium", "cost", Decimal("0.02"), "ratio",
      "The project team's cost total and the ledger's differ by more than the tolerance."),
     ("no_ledger_cost", "Cost missing from ledger", "medium", "cost", None, None,
@@ -112,6 +112,11 @@ class Finding:
 
 def money(value: Decimal) -> str:
     return f"${value:,.0f}"
+
+
+def words(status: str | None) -> str:
+    """POSTING_FAILED as "posting failed"."""
+    return (status or "unknown").lower().replace("_", " ")
 
 
 def short_date(value: date) -> str:
@@ -382,9 +387,9 @@ async def no_job(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[
     ]
 
 
-async def closed_month(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
-    # Last day of the most recent month finance has closed.
-    month_end = (
+def last_closed_day(run: SyncRun):
+    """SQL: the last day of the most recent month finance has closed."""
+    return (
         select(
             func.max(
                 cast(
@@ -405,16 +410,19 @@ async def closed_month(db: AsyncSession, run: SyncRun, issue_type: IssueType) ->
         )
         .scalar_subquery()
     )
-    ledger = aliased(MoneyLine)
-    in_ledger = exists().where(ledger.kind.like("ledger_%"), ledger.doc_number == line.doc_number)
-    rows = await db.execute(_bills().where(line.line_date <= month_end, ~in_ledger))
+
+
+async def closed_month(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
+    # The ledger books cost as journal entries per job and never cites a bill's number, so
+    # whether a bill is booked is read from the bill itself: posted, or not.
+    rows = await db.execute(_bills().where(line.line_date <= last_closed_day(run), line.status != "POSTED"))
     return [
         Finding(
             "closed_month", r.doc_number, r.amount,
             summary=f"{r.doc_number}, dated {short_date(r.line_date)}",
             detail=(
                 f"{r.doc_number} from {r.vendor} is dated {short_date(r.line_date)}. "
-                "That month is closed and the ledger has no entry for it."
+                f"That month is closed and the bill is {words(r.status)}, so it is not in that month's cost."
             ),
             next_step="Finance decides whether to reopen the month or book it now.",
             action_label="Send to finance", owner=r.owner, job_id=r.job_id, evidence=[r.line_id], document=r.doc_number,

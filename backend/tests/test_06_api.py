@@ -40,7 +40,7 @@ async def test_sync_run_reports_what_it_did(api):
     assert (run["status"], run["as_of"]) == ("succeeded", "2026-07-28")
     assert run["stats"]["land"]["tables"] == 42
     assert run["stats"]["normalize"]["jobs"] == 25
-    assert run["stats"]["issues"]["found"] == 69
+    assert run["stats"]["issues"]["found"] == 65
     assert (await get(api, f"/sync-runs/{run['id']}"))["id"] == run["id"]
     latest = await get(api, "/sync-runs", limit=1)
     assert latest["data"][0]["id"] == run["id"]
@@ -81,7 +81,7 @@ async def test_summary_for_finance(api):
         "sent": "2805000.00",
         "collected": "1696536.00",
     }
-    assert (body["open_issue_count"], body["jobs_with_issues"]) == (69, 23)
+    assert (body["open_issue_count"], body["jobs_with_issues"]) == (65, 23)
     assert len(body["issues_by_type"]) == 17
     assert body["issues_by_type"][0] == {
         "type_key": "past_due", "title": "Customer invoice past due", "severity": "high",
@@ -202,7 +202,7 @@ async def test_invoices_and_bills_across_jobs(api):
 
 async def test_issues_list_and_filters(api):
     everything = await get(api, "/issues", limit=200)
-    assert everything["total"] == 69
+    assert everything["total"] == 65
     amounts = [float(i["amount"]) for i in everything["data"]]
     assert amounts == sorted(amounts, reverse=True)
     assert everything["data"][0]["key"] == "past_due:INV-2026-0538"
@@ -210,7 +210,7 @@ async def test_issues_list_and_filters(api):
     assert (await get(api, "/issues", owner=TASHA))["total"] == 11
     assert (await get(api, "/issues", type="not_sent"))["total"] == 5
     assert (await get(api, "/issues", job="CTX00080002"))["total"] == 5
-    assert (await get(api, "/issues", severity="high"))["total"] == 23
+    assert (await get(api, "/issues", severity="high"))["total"] == 19
     assert (await get(api, "/issues", status="resolved"))["total"] == 0
     assert (await api.get(f"{API}/issues", params={"colour": "red"})).status_code == 422
 
@@ -361,7 +361,7 @@ async def test_openapi_describes_every_route(api):
     assert {
         "/health", "/api/v1/ask", "/api/v1/ask/history", "/api/v1/customer-balances", "/api/v1/sync-runs", "/api/v1/sync-runs/{run_id}", "/api/v1/summary", "/api/v1/jobs",
         "/api/v1/jobs/{job_number}", "/api/v1/jobs/{job_number}/lines", "/api/v1/lines", "/api/v1/issues",
-        "/api/v1/issues/{issue_id}", "/api/v1/issues/{issue_id}/actions", "/api/v1/issues/{issue_id}/draft", "/api/v1/issues/{issue_id}/coding", "/api/v1/issue-types", "/api/v1/people", "/api/v1/sources", "/api/v1/finance", "/api/v1/operations",
+        "/api/v1/issues/{issue_id}", "/api/v1/issues/{issue_id}/actions", "/api/v1/issues/{issue_id}/draft", "/api/v1/issues/{issue_id}/coding", "/api/v1/issue-types", "/api/v1/people", "/api/v1/sources", "/api/v1/finance", "/api/v1/operations", "/api/v1/lines/{line_id}/document",
         "/api/v1/items", "/api/v1/items/{key}/actions", "/api/v1/items/{key}/draft", "/api/v1/jobs/{job_number}/review",
         "/api/v1/issue-types/{key}", "/api/v1/source-records/{record_id}",
     } == set(paths)
@@ -452,7 +452,7 @@ async def test_flagged_money_is_counted_once(api, db):
 
     # Each issue says how many others are about the same document, and names them.
     issues = (await get(api, "/issues", limit=100))["data"]
-    shared = next(i for i in issues if i["document"] == "ARS-20390")
+    shared = next(i for i in issues if i["document"] == "APX-40766")
     assert shared["same_document"] == 1
     detail = await get(api, f"/issues/{shared['id']}")
     assert [r["title"] for r in detail["related"]] != [] and all(r["id"] != shared["id"] for r in detail["related"])

@@ -21,7 +21,7 @@ EXPECTED = {
     "cost_disagree": (17, D("227005.00")),
     "no_ledger_cost": (2, D("197140.00")),
     "closed_bills": (6, D("187190.00")),
-    "closed_month": (5, D("172810.00")),
+    "closed_month": (1, D("19800.00")),
     "bill_overdue": (5, D("172810.00")),
     "rev_invoiced": (2, D("127600.00")),
     "discount": (3, D("72370.00")),
@@ -65,7 +65,7 @@ async def test_findings_per_type_match_the_export(db):
         )
     ).all()
     assert {key: (count, amount) for key, count, amount in rows} == EXPECTED
-    assert sum(count for _, count, _ in rows) == 69
+    assert sum(count for _, count, _ in rows) == 65
 
 
 async def test_issues_go_to_the_ops_manager_then_the_account_executive(recon):
@@ -122,7 +122,7 @@ async def test_resync_changes_nothing(recon, db):
     ids_before = dict((await db.execute(select(Issue.key, Issue.id))).all())
     events_before = await db.scalar(select(func.count()).select_from(IssueEvent))
     stats = (await recon.run_sync()).stats["issues"]
-    assert (stats["opened"], stats["reopened"], stats["cleared"], stats["unchanged"]) == (0, 0, 0, 69)
+    assert (stats["opened"], stats["reopened"], stats["cleared"], stats["unchanged"]) == (0, 0, 0, 65)
     assert dict((await db.execute(select(Issue.key, Issue.id))).all()) == ids_before
     assert await db.scalar(select(func.count()).select_from(IssueEvent)) == events_before
 

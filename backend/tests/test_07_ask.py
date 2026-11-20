@@ -455,14 +455,14 @@ async def test_other_follow_ups_stay_inside_the_company(api, model):
     model(drafted("Bill ARS-20447", body))
     from_owner = (await api.post(f"{API}/issues/{issue['id']}/draft", json={"writer": TASHA})).json()
     assert from_owner["recipient"] == {
-        "audience": "internal", "name": "Finance", "role": "Harborstone's finance team", "email": None,
+        "audience": "internal", "name": "Finance", "role": "Harborstone's finance team", "email": None, "cc": [],
     }
 
     scripted = model(drafted("Bill ARS-20447", body))
     from_finance = (await api.post(f"{API}/issues/{issue['id']}/draft", json={"writer": "Rachel Kim"})).json()
     assert from_finance["recipient"] == {
         "audience": "internal", "name": TASHA, "role": "Has this issue as the job's ops manager",
-        "email": "tasha.green@ciridae.com",
+        "email": "tasha.green@ciridae.com", "cc": [],
     }
     assert "colleague at Harborstone" in scripted.requests[0]["instructions"]
 

@@ -44,7 +44,7 @@ def reviewed(*entries: dict, first: str | None = None, why: str | None = None) -
     )
 
 
-async def test_sixty_nine_check_hits_are_fifty_five_things_to_fix(api, db):
+async def test_sixty_five_check_hits_are_fifty_five_things_to_fix(api, db):
     listed = await groups(api)
     items = [i for g in listed for i in g["items"]]
     kinds: dict[str, int] = {}
@@ -57,7 +57,7 @@ async def test_sixty_nine_check_hits_are_fifty_five_things_to_fix(api, db):
     }
     # Every open issue is behind exactly the items it should be, and none is lost.
     behind = {issue_id for found in items for issue_id in found["issue_ids"]}
-    assert len(behind) == await db.scalar(text("select count(*) from recon.issue where status in ('open', 'assigned')")) == 69
+    assert len(behind) == await db.scalar(text("select count(*) from recon.issue where status in ('open', 'assigned')")) == 65
     assert len({found["key"] for found in items}) == len(items) == 55
 
     # One group per job, and bills with no job in a group of their own, listed first.
@@ -90,7 +90,7 @@ async def test_three_checks_on_one_bill_are_one_item_with_tags(api):
     assert [event["kind"] for event in bill["events"]] == ["opened"]
 
     summary = (await api.get(f"{API}/summary")).json()
-    assert (summary["open_issue_count"], summary["open_item_count"]) == (69, 55)
+    assert (summary["open_issue_count"], summary["open_item_count"]) == (65, 55)
     assert (await api.get(f"{API}/summary", params={"owner": TASHA})).json()["open_item_count"] == 10
     assert (job["flagged_amount"], job["ops_manager"]) == ("19800.00", None)
 
@@ -129,7 +129,8 @@ async def test_items_can_be_limited_to_a_person_a_state_or_a_check(api):
 async def test_an_action_on_an_item_reaches_every_check_behind_it(api, db):
     key = "bill_stuck:CVG-6540"
     before = await item(api, key)
-    assert len(before["issue_ids"]) == 3 and before["state"] == "needs_action"
+    # Posted and late, on a closed job: two checks, one bill.
+    assert len(before["issue_ids"]) == 2 and before["state"] == "needs_action"
 
     # A note, a new owner and a date, saved together and recorded once.
     updated = await act(api, key, action="update", note="AP will re-post it Monday.", assignee=TASHA, follow_up_in_working_days=5)
@@ -148,7 +149,7 @@ async def test_an_action_on_an_item_reaches_every_check_behind_it(api, db):
 
     resolved = await act(api, key, action="resolve", note="Posted and paid.")
     assert (resolved["state"], resolved["resolution_note"], resolved["follow_up_on"]) == ("done", "Posted and paid.", None)
-    assert await db.scalar(text("select count(*) from recon.issue where id = any(:ids) and status = 'resolved'"), {"ids": before["issue_ids"]}) == 3
+    assert await db.scalar(text("select count(*) from recon.issue where id = any(:ids) and status = 'resolved'"), {"ids": before["issue_ids"]}) == 2
     assert all(i["key"] != key for g in await groups(api) for i in g["items"])
     assert (await item(api, key, state="done"))["state"] == "done"
 
@@ -448,3 +449,65 @@ async def test_the_operations_view_answers_start_speed_pace_and_ownership(api):
     assert owners["Tasha Green"]["jobs_in_progress"] == 4 and owners["Tasha Green"]["jobs_not_started"] == 1
     total = sum(o["open_items"] for o in owners.values())
     assert total == 55 - 3  # every item, less the three bills that are on no job
+
+
+async def test_a_customer_message_copies_the_person_named_on_the_invoice(api, model, source, recon):  # noqa: F811
+    """It goes to the customer's billing contact. The person the invoice is made out to is copied in, when different."""
+    from test_07_ask import drafted
+
+    key = "invoice_unpaid:INV-2026-0538"
+    model(drafted("Subject", "Body."))
+    alone = (await api.post(f"{API}/items/{key}/draft", json={"writer": TASHA})).json()["recipient"]
+    assert (alone["name"], alone["cc"]) == ("Carl Jefferson", [])
+
+    # Made out to someone else at the same customer: they are copied in.
+    other = await source.scalar(text(
+        "select c.id from source_company.contacts c where c.company_id = ("
+        "  select company_id from source_company.contacts where email = 'cjefferson@northgateisd.org')"
+        " and c.email <> 'cjefferson@northgateisd.org' limit 1"
+    ))
+    if other is None:
+        other = await source.scalar(text(
+            "insert into source_company.contacts (id, company_id, first_name, last_name, email, title, created_at, updated_at) "
+            "select 'test-contact', company_id, 'Dana', 'Reyes', 'dreyes@northgateisd.org', 'Facilities Director', now(), now() "
+            "from source_company.contacts where email = 'cjefferson@northgateisd.org' returning id"
+        ))
+    await source.execute(text("update source_company.ar_invoices set contact_id = :c where invoice_number = 'INV-2026-0538'"), {"c": other})
+    await source.commit()
+    await recon.run_sync()
+
+    scripted = model(drafted("Subject", "Body."))
+    both = (await api.post(f"{API}/items/{key}/draft", json={"writer": TASHA})).json()["recipient"]
+    assert both["name"] == "Carl Jefferson" and len(both["cc"]) == 1
+    assert both["cc"][0]["role"].startswith("Named on invoice INV-2026-0538") and both["cc"][0]["email"]
+    assert json.loads(scripted.requests[0]["input"][0]["content"])["copied"][0]["name"] == both["cc"][0]["name"]
+
+
+async def test_an_invoice_and_a_bill_can_be_laid_out_as_documents(api, db):
+    async def document(number: str) -> dict:
+        line_id = await db.scalar(text("select id from recon.money_line where doc_number = :n and kind in ('customer_invoice', 'vendor_bill')"), {"n": number})
+        response = await api.get(f"{API}/lines/{line_id}/document")
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    invoice = await document("INV-2026-0502")
+    assert (invoice["kind"], invoice["status"], invoice["terms"]) == ("customer_invoice", "SENT", "Net 30")
+    assert invoice["issuer"]["name"].endswith("LLC") and invoice["issuer"]["address"] == ["2100 Commerce St", "Dallas, TX 75201-5021"]
+    assert invoice["recipient"]["name"] == "Redbird Industrial Trust" and invoice["recipient"]["attention"] == "Victor Aldana"
+    assert invoice["recipient"]["address"] and invoice["site"]
+    assert (invoice["total"], invoice["paid"], invoice["balance"]) == ("216500.00", "129900.00", "86600.00")
+    assert [p["reference"] for p in invoice["payments"]] and invoice["payments"][0]["method"] == "ACH"
+    assert invoice["lines"][0]["amount"] == "216500.00" and invoice["files"] == ["Invoice PDF"]
+    assert len(invoice["notes"]) == 1 and "next check run" in invoice["notes"][0]
+
+    bill = await document("ARS-20447")
+    assert (bill["kind"], bill["issuer"]["name"], bill["job_number"]) == ("vendor_bill", "Alliance Roofing Supply", "RTX00050002")
+    assert bill["recipient"]["name"].startswith("Ciridae OS")
+    assert sorted(line["description"] for line in bill["lines"]) == [
+        "Fasteners & adhesive", "Modified bitumen membrane — 240 squares", "Polyiso insulation R-25",
+    ]
+    assert sum(D(line["amount"]) for line in bill["lines"]) == D(bill["total"]) == D("48350.00")
+    assert bill["discount"].startswith("2% off if paid within 10 days")
+    assert bill["files"] == ["ARS-20447.pdf"] and bill["received_by_email"].startswith("Emailed by ar@allianceroofingsupply.com")
+
+    assert (await api.get(f"{API}/lines/999999/document")).status_code == 404

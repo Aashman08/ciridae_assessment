@@ -3,7 +3,12 @@ import { useLocation, useSearchParams } from 'react-router-dom'
 import type { AskPage, AskSource, Item } from './api'
 
 /** What the side pane is showing. It is closed when this is null. */
-export type AssistantView = { kind: 'chat' } | { kind: 'draft'; item: Item } | { kind: 'coding'; item: Item }
+export type AssistantView =
+  | { kind: 'chat' }
+  | { kind: 'draft'; item: Item }
+  | { kind: 'coding'; item: Item }
+  /** An invoice or vendor bill laid out as a document. */
+  | { kind: 'document'; lineId: number; documentKind: 'customer_invoice' | 'vendor_bill' }
 
 export const AssistantContext = createContext<{
   view: AssistantView | null

@@ -86,7 +86,13 @@ async def write(facts: dict, writer: str, recipient: Recipient, document: str | 
         output_type=DraftReply,
     )
     brief = json.dumps(
-        {"writer": writer, "recipient": {"name": recipient.name, "role": recipient.role}, "facts": facts},
+        {
+            "writer": writer,
+            "recipient": {"name": recipient.name, "role": recipient.role},
+            # Copied in, so the message can be read by them too. It is still written to the recipient.
+            "copied": [{"name": person.name, "role": person.role} for person in recipient.cc],
+            "facts": facts,
+        },
         ensure_ascii=False,
     )
     result = await Runner.run(agent, brief, max_turns=2)
