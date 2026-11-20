@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, Integer, and_, cast, delete, exists, func, literal, or_, select, text, type_coerce
+from sqlalchemy import Date, Integer, Numeric, and_, case, cast, delete, exists, func, literal, or_, select, text, type_coerce
 from sqlalchemy.dialects.postgresql import aggregate_order_by, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -66,6 +66,14 @@ ISSUE_TYPES = [
      "A vendor bill is not assigned to any job."),
     ("no_owner", "No operations owner", "medium", "ownership", None, None,
      "The job has no ops manager assigned."),
+    ("slow_start", "Slow to start", "medium", "schedule", Decimal("14"), "days",
+     "The job is not on site yet and will start more than the tolerance after it was won. Urgent jobs: more than 1 day."),
+    ("past_finish", "Past planned finish", "high", "schedule", None, None,
+     "The job is still in progress after its planned finish date."),
+    ("no_activity", "No work logged", "medium", "schedule", Decimal("14"), "days",
+     "The job is in progress and no cost or vendor bill is dated within the tolerance."),
+    ("budget_burn", "Spending ahead of schedule", "medium", "cost", Decimal("0.10"), "ratio",
+     "The share of budget used is ahead of the share of schedule gone by more than the tolerance, or cost is over budget."),
 ]
 
 
@@ -461,11 +469,134 @@ async def discount(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> lis
     ]
 
 
+# --- Schedule ----------------------------------------------------------------
+# The checks above are about money. These are about time: whether jobs start when
+# they should, keep moving, and spend at the pace their schedule allows.
+
+
+async def slow_start(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
+    as_of = literal(run.as_of, Date)
+    start = func.coalesce(Job.on_site_on, as_of)
+    wait = (start - Job.won_on).label("wait")
+    allowed = case((Job.urgent_reason.is_not(None), 1), else_=cast(issue_type.tolerance or 14, Integer))
+    rows = await db.execute(
+        _jobs(run, Job.name, Job.won_on, Job.on_site_on, Job.incident_on, Job.urgent_reason, wait).where(
+            Job.stage == "WORK_NOT_STARTED", Job.won_on.is_not(None), wait > allowed
+        )
+    )
+    findings = []
+    for r in rows:
+        planned = f"planned to be on site {short_date(r.on_site_on)}" if r.on_site_on else "with no start date set"
+        since = f" The damage was on {short_date(r.incident_on)}." if r.incident_on else ""
+        urgent = f" {r.urgent_reason}, so it should start within a day." if r.urgent_reason else ""
+        findings.append(
+            Finding(
+                "slow_start", r.job_number, ZERO,
+                summary=f"Won {short_date(r.won_on)}, {planned}",
+                detail=f"Won {short_date(r.won_on)} and {planned}: {r.wait} days from win to start.{since}{urgent}",
+                next_step="Confirm the start date with the ops manager, or bring it forward.",
+                action_label="Confirm the start", owner=r.owner, job_id=r.job_id, due_on=r.on_site_on,
+            )
+        )
+    return findings
+
+
+async def past_finish(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
+    rows = await db.execute(
+        _jobs(run, Job.planned_finish_on).where(Job.stage == "IN_PROGRESS", Job.planned_finish_on < run.as_of)
+    )
+    return [
+        Finding(
+            "past_finish", r.job_number, ZERO,
+            summary=f"Planned to finish {short_date(r.planned_finish_on)}",
+            detail=(
+                f"Planned to finish {short_date(r.planned_finish_on)} and still in progress, "
+                f"{(run.as_of - r.planned_finish_on).days} days later."
+            ),
+            next_step="Get a new finish date and the reason for the delay.",
+            action_label="Ask for a status update", owner=r.owner, job_id=r.job_id, due_on=r.planned_finish_on,
+        )
+        for r in rows
+    ]
+
+
+async def no_activity(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
+    work = ("ops_cost", "vendor_bill")
+    last = (
+        select(func.max(line.line_date)).where(line.job_id == Job.id, line.kind.in_(work)).correlate(Job).scalar_subquery()
+    )
+    latest = aliased(MoneyLine)
+    rows = await db.execute(
+        _jobs(
+            run, last.label("last_work"),
+            select(func.array_agg(latest.id))
+            .where(latest.job_id == Job.id, latest.kind.in_(work), latest.line_date == last)
+            .correlate(Job)
+            .scalar_subquery()
+            .label("evidence"),
+        ).where(
+            Job.stage == "IN_PROGRESS",
+            func.coalesce(last, Job.on_site_on) <= run.as_of - cast(issue_type.tolerance or 14, Integer),
+        )
+    )
+    return [
+        Finding(
+            "no_activity", r.job_number, ZERO,
+            summary=f"Last work logged {short_date(r.last_work)}" if r.last_work else "No work logged",
+            detail=(
+                f"The last cost or vendor bill on this job is dated {short_date(r.last_work)}, "
+                f"{(run.as_of - r.last_work).days} days before {short_date(run.as_of)}."
+                if r.last_work
+                else "No cost or vendor bill has been logged on this job."
+            ),
+            next_step="Ask whether work has paused, or whether cost is not being logged.",
+            action_label="Ask for a status update", owner=r.owner, job_id=r.job_id, evidence=r.evidence or [],
+        )
+        for r in rows
+    ]
+
+
+async def budget_burn(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
+    cost = func.greatest(fin.ops_cost, fin.ledger_cost)
+    days = cast(Job.planned_finish_on - Job.on_site_on, Integer)
+    gone = cast(literal(run.as_of, Date) - Job.on_site_on, Integer)
+    time_share = func.least(1.0, cast(gone, Numeric) / func.nullif(days, 0))
+    spend_share = cost / func.nullif(Job.budget, 0)
+    ahead = (spend_share - time_share).label("ahead")
+    rows = await db.execute(
+        _jobs(
+            run, Job.budget, Job.on_site_on, Job.planned_finish_on, cost.label("cost"),
+            (spend_share * 100).label("spent_pct"), (time_share * 100).label("time_pct"), ahead,
+            # How far ahead of pace the spending is, in dollars.
+            func.greatest(cost - Job.budget * time_share, 0).label("amount"),
+            _line_ids("ops_cost", "ledger_cost"),
+        ).where(
+            Job.stage == "IN_PROGRESS", Job.budget > 0, Job.on_site_on.is_not(None), days > 0,
+            or_(cost > Job.budget, ahead > (issue_type.tolerance or Decimal("0.10"))),
+        )
+    )
+    return [
+        Finding(
+            "budget_burn", r.job_number, r.amount,
+            summary=f"{r.spent_pct:.0f}% of budget used, {r.time_pct:.0f}% of schedule gone",
+            detail=(
+                f"{money(r.cost)} spent of a {money(r.budget)} budget ({r.spent_pct:.0f}%), with "
+                f"{r.time_pct:.0f}% of the time from {short_date(r.on_site_on)} to {short_date(r.planned_finish_on)} gone."
+                + (" It is already over budget." if r.cost > r.budget else "")
+            ),
+            next_step="Ask for a forecast of cost to finish, before the budget runs out.",
+            action_label="Ask for a cost forecast", owner=r.owner, job_id=r.job_id, evidence=r.evidence or [],
+        )
+        for r in rows
+    ]
+
+
 CHECKS = {
     check.__name__: check
     for check in (
         closed_bills, past_due, not_sent, over_contract, closed_month, cost_disagree, no_ledger_cost,
         rev_invoiced, underbilled, bill_overdue, discount, no_job, no_owner,
+        slow_start, past_finish, no_activity, budget_burn,
     )
 }
 

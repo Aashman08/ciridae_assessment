@@ -38,6 +38,17 @@ def canonical_category(code: str | None) -> str | None:
     return code.upper().replace("-", "_") if code else None
 
 
+def urgent_reason(service_line: str | None, catastrophe: dict | None) -> str | None:
+    """Why a job must start at once, or None. The CRM has an urgency field but it is
+    empty on every record, so this is a fixed rule instead, stated wherever it is used:
+    mitigation is emergency response, and a named catastrophe means damage is spreading."""
+    if service_line == "MITIGATION":
+        return "Mitigation is emergency response"
+    if catastrophe:
+        return f"Part of the {catastrophe.get('name') or 'named catastrophe'}"
+    return None
+
+
 class Landed:
     """The rows landed in this run, grouped by source table."""
 
@@ -101,6 +112,7 @@ async def normalize(db: AsyncSession, run: SyncRun) -> dict:
     contacts = landed.by_id("contacts")
     branches = landed.by_id("branches")
     budget_by_opp = {p["opportunity_id"]: p for _, p in landed.rows("budgets")}
+    catastrophes = landed.by_id("catastrophe_events")
     first_change_order: dict[str, dict] = {}
     for _, p in sorted(landed.rows("change_orders"), key=lambda r: r[1]["change_order_number"]):
         first_change_order.setdefault(p["project_id"], p)
@@ -112,6 +124,7 @@ async def normalize(db: AsyncSession, run: SyncRun) -> dict:
         branch = branches.get(opp.get("operating_branch_id") or "", {})
         budget = budget_by_opp.get(opp["id"], {})
         change_order = first_change_order.get(project["id"])
+        catastrophe = catastrophes.get(opp.get("catastrophe_event_id") or "")
         job_rows.append(
             {
                 "job_number": project["project_number"],
@@ -122,6 +135,9 @@ async def normalize(db: AsyncSession, run: SyncRun) -> dict:
                 "crm_status": opp.get("status"),
                 "stage": project["status"],
                 "won_on": to_date(opp.get("won_date")),
+                "incident_on": to_date(opp.get("incident_date")),
+                "loss_type": opp.get("loss_type"),
+                "urgent_reason": urgent_reason(project.get("project_type"), catastrophe),
                 "estimated_value": to_money(opp.get("estimated_value")),
                 "contract_value": to_money(project.get("contract_value")) or Decimal(0),
                 "original_contract_value": to_money(change_order["original_contract_value"]) if change_order else None,

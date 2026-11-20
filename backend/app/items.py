@@ -43,6 +43,10 @@ KIND_OF = {
     "rev_invoiced": "billing_gap",
     "underbilled": "billing_gap",
     "no_owner": "no_ops_manager",
+    "slow_start": "late_start",
+    "past_finish": "stalled",
+    "no_activity": "stalled",
+    "budget_burn": "budget_risk",
 }
 # The same, short enough to sit several to a line on a job's row.
 SHORT = {
@@ -52,6 +56,9 @@ SHORT = {
     "bill_no_job": "Bill with no job",
     "cost_gap": "Cost gap",
     "billing_gap": "Billing gap",
+    "late_start": "Slow to start",
+    "stalled": "Stalled",
+    "budget_risk": "Spending ahead",
     "no_ops_manager": "No ops manager",
 }
 TITLES = {
@@ -61,8 +68,13 @@ TITLES = {
     "bill_no_job": "Vendor bill with no job",
     "cost_gap": "Cost does not agree",
     "billing_gap": "Billing does not agree",
+    "late_start": "Slow to start",
+    "stalled": "Stalled",
+    "budget_risk": "Spending ahead of schedule",
     "no_ops_manager": "No ops manager",
 }
+# Items about when work happens. They are the ops manager's to answer.
+SCHEDULE_KINDS = ("late_start", "stalled", "budget_risk")
 # Items about one document, and the order kinds are listed in on a job.
 DOCUMENT_KINDS = ("invoice_unpaid", "invoice_not_sent", "bill_stuck", "bill_no_job")
 ORDER = list(TITLES)
@@ -107,11 +119,19 @@ def work_for(kind: str, status: str | None) -> ItemAction:
         return ItemAction(key="message_colleague", label="Ask to reconcile costs")
     if kind == "billing_gap":
         return ItemAction(key="message_colleague", label="Ask to reconcile billing")
+    if kind == "late_start":
+        return ItemAction(key="message_colleague", label="Confirm the start")
+    if kind == "stalled":
+        return ItemAction(key="message_colleague", label="Ask for a status update")
+    if kind == "budget_risk":
+        return ItemAction(key="message_colleague", label="Ask for a cost forecast")
     return ItemAction(key="assign_ops_manager", label="Assign an ops manager")
 
 
 def with_whom(kind: str, status: str | None) -> str:
     """Who a message about this item goes to inside the company: "ops" or "finance"."""
+    if kind in SCHEDULE_KINDS:
+        return "ops"
     if kind in ("invoice_not_sent", "bill_stuck") and status in WITH_OPS:
         return "ops"
     return "finance"
@@ -135,6 +155,12 @@ def what_to_ask(kind: str, status: str | None, document: str | None) -> str:
         return "Reconcile the project team's cost total with the ledger for this job and say which is right."
     if kind == "billing_gap":
         return "Reconcile what has been invoiced with the revenue in the ledger for this job and say which is right."
+    if kind == "late_start":
+        return "Confirm the date the crew will be on site, and whether it can be brought forward."
+    if kind == "stalled":
+        return "Say where the job stands, what is holding it up, and the new finish date."
+    if kind == "budget_risk":
+        return "Give a forecast of the cost to finish, and say whether the budget will hold."
     return "Say who the ops manager for this job is."
 
 
@@ -182,6 +208,9 @@ def _item(key: str, members: list[Issue], as_of: date | None, today: date) -> It
     shown = [l for l in lines.values() if l is own] if own else list(lines.values())
 
     due = next((i.due_on for i in live if i.type_key in ("past_due", "bill_overdue") and i.due_on), None) or (own.due_date if own else None)
+    if kind in SCHEDULE_KINDS:
+        # The date the job was due to start or finish.
+        due = next((i.due_on for i in live if i.due_on), None)
     late = (as_of - due).days if as_of and due and kind in ("invoice_unpaid", "bill_stuck") else 0
 
     tags: list[ItemTag] = []
@@ -202,6 +231,8 @@ def _item(key: str, members: list[Issue], as_of: date | None, today: date) -> It
         tags.append(ItemTag(key="over_contract", label="Above contract"))
     if "underbilled" in checks:
         tags.append(ItemTag(key="underbilled", label="Complete, not fully billed"))
+    if kind in SCHEDULE_KINDS:
+        tags.extend(_schedule_tags(lead.job, live, as_of))
 
     follow_up = min((i.follow_up_on for i in active if i.follow_up_on), default=None)
     state = "done" if not active else "waiting" if follow_up and follow_up > today else "needs_action"
@@ -245,6 +276,40 @@ def _item(key: str, members: list[Issue], as_of: date | None, today: date) -> It
         evidence=[line_response(l) for l in sorted(shown, key=lambda l: (l.line_date or date.min, l.id))],
         events=[EventResponse.model_validate(e) for e in events],
     )
+
+
+def _schedule_tags(job: Job | None, issues: list[Issue], as_of: date | None) -> list[ItemTag]:
+    """The figures that make a schedule item worth a look, as tags."""
+    if job is None:
+        return []
+    today = as_of or date.today()
+    checks = {issue.type_key: issue for issue in issues}
+    tags: list[ItemTag] = []
+    if job.urgent_reason:
+        tags.append(ItemTag(key="urgent", label="Urgent"))
+    if "slow_start" in checks and job.won_on:
+        start = job.on_site_on or today
+        tags.append(ItemTag(key="wait", label=f"{(start - job.won_on).days} days from win to start"))
+        if job.on_site_on:
+            tags.append(ItemTag(key="starts", label=f"Starts {job.on_site_on.day} {job.on_site_on:%b}"))
+    if "past_finish" in checks and job.planned_finish_on:
+        tags.append(ItemTag(key="late", label=f"{(today - job.planned_finish_on).days} days past finish"))
+    if "no_activity" in checks:
+        dates = [e.line.line_date for e in checks["no_activity"].evidence if e.line.line_date]
+        if dates:
+            tags.append(ItemTag(key="idle", label=f"No work logged for {(today - max(dates)).days} days"))
+    if "budget_burn" in checks:
+        lines = [e.line for e in checks["budget_burn"].evidence]
+        cost = max(
+            sum((l.amount for l in lines if l.kind == "ops_cost"), Decimal(0)),
+            sum((l.amount for l in lines if l.kind == "ledger_cost"), Decimal(0)),
+        )
+        if job.budget:
+            tags.append(ItemTag(key="spent", label=f"{cost / job.budget:.0%} of budget used"))
+        if job.on_site_on and job.planned_finish_on and job.planned_finish_on > job.on_site_on:
+            share = min(1, (today - job.on_site_on).days / (job.planned_finish_on - job.on_site_on).days)
+            tags.append(ItemTag(key="time", label=f"{share:.0%} of time gone"))
+    return tags
 
 
 def fingerprint(items: list[ItemResponse]) -> str:

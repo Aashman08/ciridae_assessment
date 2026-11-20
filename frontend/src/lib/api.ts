@@ -362,6 +362,70 @@ export interface Coding {
   looked_at: AskStep[]
 }
 
+/** Whether jobs start quickly, keep moving, spend at the right pace, and have someone in charge. */
+export interface Operations {
+  as_of: string
+  /** How a job is judged urgent. Nothing in the source marks it. */
+  urgent_rule: string
+  start_tolerance_days: number
+  urgent: {
+    job_number: string
+    name: string
+    urgent_reason: string
+    incident_on: string | null
+    won_on: string | null
+    on_site_on: string | null
+    days_damage_to_site: number | null
+    days_win_to_site: number | null
+    started_in_time: boolean
+  }[]
+  waiting: {
+    job_number: string
+    name: string
+    ops_manager: string | null
+    urgent_reason: string | null
+    won_on: string | null
+    on_site_on: string | null
+    days_win_to_start: number | null
+    slow: boolean
+  }[]
+  in_progress: {
+    job_number: string
+    name: string
+    ops_manager: string | null
+    on_site_on: string | null
+    planned_finish_on: string | null
+    time_gone_pct: string | null
+    budget_used_pct: string | null
+    last_work_on: string | null
+    flags: ('past_finish' | 'no_activity' | 'budget_burn')[]
+  }[]
+  owners: {
+    name: string
+    jobs_in_progress: number
+    jobs_not_started: number
+    open_items: number
+    needing_action: number
+    schedule_items: number
+  }[]
+}
+
+/** The ledger's view of the business: what was earned and spent, where cost went, and what is owed. */
+export interface Finance {
+  as_of: string
+  revenue: Money
+  cost: Money
+  profit: Money
+  margin_pct: string | null
+  by_month: { month: string; revenue: Money; cost: Money; invoiced: Money; collected: Money }[]
+  /** What the project team logged under each cost code. */
+  cost_by_code: { cost_code: string; ops_cost: Money }[]
+  /** The ledger accounts job cost is posted to. One account means the ledger cannot split cost by cost code. */
+  ledger_cost_accounts: string[]
+  receivables_by_age: { bucket: 'not_due' | 'late_1_30' | 'late_31_60' | 'late_over_60'; invoices: number; amount: Money }[]
+  by_service_line: { service_line: string; jobs: number; revenue: Money; cost: Money; profit: Money; margin_pct: string | null }[]
+}
+
 /** One of Harborstone's systems, as we last read it. */
 export interface SourceSystem {
   system: 'crm' | 'project' | 'accounting'
@@ -434,6 +498,8 @@ export type Paging = {
 
 export const api = {
   summary: (owner?: string) => request<Summary>(`/summary${query({ owner })}`),
+  finance: () => request<Finance>('/finance'),
+  operations: () => request<Operations>('/operations'),
 
   jobs: (params: Paging & { stage?: string; owner?: string; q?: string; sort?: JobSort; order?: Order }) =>
     request<ListResponse<JobSummary>>(`/jobs${query(params)}`),

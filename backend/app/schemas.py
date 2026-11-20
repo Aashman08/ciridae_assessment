@@ -359,6 +359,113 @@ class SummaryResponse(BaseModel):
     )
 
 
+# --- Operations ----------------------------------------------------------------
+
+
+class UrgentStart(BaseModel):
+    job_number: str
+    name: str
+    urgent_reason: str
+    incident_on: date | None
+    won_on: date | None
+    on_site_on: date | None
+    days_damage_to_site: int | None = Field(description="From the date of the damage to the first day on site")
+    days_win_to_site: int | None
+    started_in_time: bool = Field(description="On site within a day of being won")
+
+
+class WaitingStart(BaseModel):
+    job_number: str
+    name: str
+    ops_manager: str | None
+    urgent_reason: str | None
+    won_on: date | None
+    on_site_on: date | None = Field(description="The planned first day on site. None if no date is set")
+    days_win_to_start: int | None
+    slow: bool = Field(description="Starting later after the win than the tolerance allows")
+
+
+class JobPace(BaseModel):
+    job_number: str
+    name: str
+    ops_manager: str | None
+    on_site_on: date | None
+    planned_finish_on: date | None
+    time_gone_pct: Percent | None = Field(description="Share of the time from first day on site to planned finish that has gone")
+    budget_used_pct: Percent | None = Field(description="Cost so far, the higher of ops log and ledger, as a share of budget")
+    last_work_on: date | None = Field(description="The latest cost entry or vendor bill on the job")
+    flags: list[Literal["past_finish", "no_activity", "budget_burn"]]
+
+
+class OwnerLoad(BaseModel):
+    name: str = Field(description="The ops manager, or None assigned")
+    jobs_in_progress: int = 0
+    jobs_not_started: int = 0
+    open_items: int = 0
+    needing_action: int = 0
+    schedule_items: int = Field(0, description="Of the open items, how many are about starting, stalling or spending ahead")
+
+
+class OperationsResponse(BaseModel):
+    """Whether jobs start quickly, keep moving, spend at the right pace, and have someone in charge."""
+
+    as_of: date
+    urgent_rule: str
+    start_tolerance_days: int
+    urgent: list[UrgentStart]
+    waiting: list[WaitingStart]
+    in_progress: list[JobPace]
+    owners: list[OwnerLoad]
+
+
+# --- Finance -------------------------------------------------------------------
+
+
+class FinanceMonth(BaseModel):
+    month: str = Field(description="The calendar month, as YYYY-MM")
+    revenue: Money = Field(description="Revenue posted to the ledger")
+    cost: Money = Field(description="Job cost posted to the ledger")
+    invoiced: Money
+    collected: Money = Field(description="Customer payments received")
+
+
+class CostByCode(BaseModel):
+    cost_code: str
+    ops_cost: Money = Field(description="What the project team logged under this cost code")
+
+
+class ReceivableAge(BaseModel):
+    bucket: Literal["not_due", "late_1_30", "late_31_60", "late_over_60"]
+    invoices: int
+    amount: Money
+
+
+class WorkKindProfit(BaseModel):
+    service_line: str
+    jobs: int
+    revenue: Money
+    cost: Money
+    profit: Money
+    margin_pct: Percent | None
+
+
+class FinanceResponse(BaseModel):
+    """The ledger's view of the business: what was earned and spent, where cost went, and what is owed."""
+
+    as_of: date
+    revenue: Money
+    cost: Money
+    profit: Money
+    margin_pct: Percent | None
+    by_month: list[FinanceMonth]
+    cost_by_code: list[CostByCode]
+    ledger_cost_accounts: list[str] = Field(
+        description="The ledger accounts job cost is posted to. One account means the ledger cannot split cost by cost code"
+    )
+    receivables_by_age: list[ReceivableAge]
+    by_service_line: list[WorkKindProfit]
+
+
 class SourceSystem(BaseModel):
     """One of Harborstone's systems, as we last read it."""
 
@@ -540,7 +647,8 @@ class AskAnswer(BaseModel):
 # checks that fire on it become its tags.
 
 ItemKind = Literal[
-    "invoice_unpaid", "invoice_not_sent", "bill_stuck", "bill_no_job", "cost_gap", "billing_gap", "no_ops_manager"
+    "invoice_unpaid", "invoice_not_sent", "bill_stuck", "bill_no_job", "cost_gap", "billing_gap",
+    "late_start", "stalled", "budget_risk", "no_ops_manager",
 ]
 ActionKey = Literal["message_customer", "message_colleague", "code_bill", "assign_ops_manager", "wait", "dismiss"]
 

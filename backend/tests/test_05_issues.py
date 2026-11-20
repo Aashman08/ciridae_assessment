@@ -29,6 +29,11 @@ EXPECTED = {
     "over_contract": (1, D("14040.00")),
     "no_job": (3, D("8985.00")),
     "no_owner": (7, D("0.00")),
+    # Schedule: whether jobs start on time, keep moving, and spend at the pace their schedule allows.
+    "slow_start": (2, D("0.00")),
+    "past_finish": (1, D("0.00")),
+    "no_activity": (2, D("0.00")),
+    "budget_burn": (2, D("197282.42")),
 }
 
 
@@ -47,8 +52,8 @@ async def act(recon, key: str, **action) -> IssueDetailResponse:
     return await recon.act_on_issue(issue.id, IssueAction(**action))
 
 
-async def test_thirteen_issue_types_are_seeded(db):
-    assert await db.scalar(select(func.count()).select_from(IssueType)) == 13
+async def test_seventeen_issue_types_are_seeded(db):
+    assert await db.scalar(select(func.count()).select_from(IssueType)) == 17
 
 
 async def test_findings_per_type_match_the_export(db):
@@ -60,11 +65,11 @@ async def test_findings_per_type_match_the_export(db):
         )
     ).all()
     assert {key: (count, amount) for key, count, amount in rows} == EXPECTED
-    assert sum(count for _, count, _ in rows) == 62
+    assert sum(count for _, count, _ in rows) == 69
 
 
 async def test_issues_go_to_the_ops_manager_then_the_account_executive(recon):
-    assert await active_count(recon, owner="Tasha Green") == 10
+    assert await active_count(recon, owner="Tasha Green") == 11
     # BTX00030002 has no ops manager, so its issues fall to the account executive.
     assert (await find(recon, "past_due:INV-2026-0515")).owner == "Danny Alvarez"
     # A bill with no job has nobody to go to.
@@ -117,7 +122,7 @@ async def test_resync_changes_nothing(recon, db):
     ids_before = dict((await db.execute(select(Issue.key, Issue.id))).all())
     events_before = await db.scalar(select(func.count()).select_from(IssueEvent))
     stats = (await recon.run_sync()).stats["issues"]
-    assert (stats["opened"], stats["reopened"], stats["cleared"], stats["unchanged"]) == (0, 0, 0, 62)
+    assert (stats["opened"], stats["reopened"], stats["cleared"], stats["unchanged"]) == (0, 0, 0, 69)
     assert dict((await db.execute(select(Issue.key, Issue.id))).all()) == ids_before
     assert await db.scalar(select(func.count()).select_from(IssueEvent)) == events_before
 

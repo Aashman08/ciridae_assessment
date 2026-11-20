@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ItemTable } from '../components/ItemTable'
+import { Chart } from '../components/Chart'
+import { ItemTable, Tags } from '../components/ItemTable'
 import { JobTable } from '../components/JobTable'
 import { Card, CardHead, Loaded, PageHead, Stat } from '../components/ui'
 import { api } from '../lib/api'
-import type { Summary } from '../lib/api'
-import { longDate, money, monthAndYear, percent, plural } from '../lib/format'
+import type { Finance, Operations, Summary } from '../lib/api'
+import { longDate, money, percent, plural, shortDate, words } from '../lib/format'
 import { buttonClass } from '../lib/styles'
 import { useViewer } from '../lib/viewer'
 
@@ -19,61 +20,6 @@ function PastDue({ amount }: { amount: string }) {
     <>
       <span className="text-accent-ink">{money(amount)}</span> past due
     </>
-  )
-}
-
-/** Where the systems disagree, largest first, as a table like every other list in the app. */
-function IssuesByType({ summary }: { summary: Summary }) {
-  const navigate = useNavigate()
-  const largest = Math.max(...summary.issues_by_type.map((t) => Number(t.amount)), 1)
-
-  return (
-    <Card>
-      <CardHead title="What each check found">
-        <Link to="/issues" className={buttonClass()}>
-          All issues
-        </Link>
-      </CardHead>
-      <p className="px-5 pb-3 text-[0.8125rem] text-ink-2">
-        {summary.flagged_documents.count} invoices and bills are flagged, with{' '}
-        <span className="font-mono text-xs text-ink">{money(summary.flagged_documents.amount)}</span> unpaid on them. One
-        document can sit under several types, so the amounts below overlap and do not add up
-      </p>
-      <div className="overflow-x-auto">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Severity</th>
-              <th className="num">Findings</th>
-              <th className="num">Amount</th>
-              <th className="w-2/5 max-md:hidden">
-                <span className="sr-only">Share of the largest</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {summary.issues_by_type.map((type) => (
-              <tr key={type.type_key} className="clickable" onClick={() => navigate(`/issues?type=${type.type_key}`)}>
-                <td>
-                  <Link to={`/issues?type=${type.type_key}`} onClick={(e) => e.stopPropagation()}>
-                    {type.title}
-                  </Link>
-                </td>
-                <td className={`capitalize ${type.severity === 'high' ? '' : 'text-ink-2'}`}>{type.severity}</td>
-                <td className="num">{type.count}</td>
-                <td className="num">{Number(type.amount) > 0 ? money(type.amount) : ''}</td>
-                <td className="max-md:hidden">
-                  <span className="block h-1 rounded-sm bg-raised">
-                    <span className="block h-1 rounded-sm bg-ink-2" style={{ width: `${(Number(type.amount) / largest) * 100}%` }} />
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
   )
 }
 
@@ -176,42 +122,401 @@ function ContractFlow({ flow }: { flow: Summary['contract_to_cash'] }) {
   )
 }
 
-/** Finance's view: the whole company's cash position and where the systems disagree. */
-function CompanyOverview({ summary }: { summary: Summary }) {
+const AGES: Record<Finance['receivables_by_age'][number]['bucket'], string> = {
+  not_due: 'Not yet due',
+  late_1_30: '1 to 30 days',
+  late_31_60: '31 to 60 days',
+  late_over_60: 'Over 60 days',
+}
+
+// Cost codes short enough to sit under a bar. Any other code is shown as it is written.
+const COST_CODES: Record<string, string> = {
+  INTERNAL_LABOR: 'Own labor',
+  EXTERNAL_LABOR: 'Hired labor',
+  SPECIALTY_SUBCONTRACTOR: 'Subcontractors',
+  MATERIALS_AND_SUPPLIES: 'Materials',
+  EQUIPMENT_RENTAL_AND_FUEL: 'Equipment',
+}
+
+/** "2026-07" as "Jul 2026". */
+function monthName(month: string): string {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+/**
+ * Finance's view: the ledger. What was earned and spent and when, where the
+ * cost went, how the contract value is turning into cash, and what is owed.
+ * Problems on individual jobs are on the Issues tab, not here.
+ */
+function FinanceOverview({ summary }: { summary: Summary }) {
   const { cash, contract_to_cash: flow } = summary
-  const first = useQuery({ queryKey: ['jobs', 'first-six'], queryFn: () => api.jobs({ limit: 6 }) })
+  const finance = useQuery({ queryKey: ['finance'], queryFn: api.finance })
+  const thin = useQuery({
+    queryKey: ['jobs', 'lowest-margin'],
+    queryFn: () => api.jobs({ sort: 'margin', order: 'asc', limit: 6 }),
+  })
 
   return (
     <>
-      <PageHead title={monthAndYear(summary.as_of)} sub={`${plural(summary.job_count, 'job')}, as of ${longDate(summary.as_of)}`} />
+      <PageHead title="Finance" sub={`${plural(summary.job_count, 'job')}, figures as of ${longDate(summary.as_of)}`} />
 
-      <div className={STATS}>
-        <Stat label="Owed by customers" value={money(cash.owed)} note={<PastDue amount={cash.past_due} />} />
-        <Stat label="Invoices not sent" value={money(cash.invoices_not_sent)} note={plural(cash.invoices_not_sent_count, 'invoice')} />
-        <Stat
-          label="Vendor bills unpaid"
-          value={money(cash.vendor_bills_unpaid)}
-          note={`${plural(cash.vendor_bills_count, 'bill')}, none in the ledger`}
-        />
-        <Stat
-          label="To fix"
-          value={summary.open_item_count}
-          note={`on ${summary.jobs_with_issues} of ${plural(summary.job_count, 'job')}`}
-        />
-      </div>
+      <Loaded query={finance}>
+        {(ledger) => (
+          <>
+            <div className={STATS}>
+              <Stat
+                label="Profit, per ledger"
+                value={money(ledger.profit)}
+                note={`${percent(ledger.margin_pct)} of ${money(ledger.revenue)} revenue`}
+              />
+              <Stat label="Owed by customers" value={money(cash.owed)} note={<PastDue amount={cash.past_due} />} />
+              <Stat label="Invoices not sent" value={money(cash.invoices_not_sent)} note={plural(cash.invoices_not_sent_count, 'invoice')} />
+              <Stat
+                label="Vendor bills unpaid"
+                value={money(cash.vendor_bills_unpaid)}
+                note={`${plural(cash.vendor_bills_count, 'bill')}, none in the ledger`}
+              />
+            </div>
 
-      <ContractFlow flow={flow} />
+            <div className="grid grid-cols-1 gap-4 @[60rem]:grid-cols-2">
+              <Chart
+                kind="line"
+                title="Revenue, cost and cash by month"
+                unit="money"
+                points={ledger.by_month.map((m) => monthName(m.month))}
+                series={[
+                  { label: 'Revenue, ledger', values: ledger.by_month.map((m) => Number(m.revenue)) },
+                  { label: 'Cost, ledger', values: ledger.by_month.map((m) => Number(m.cost)) },
+                  { label: 'Cash collected', values: ledger.by_month.map((m) => Number(m.collected)) },
+                ]}
+                note={`${monthName(ledger.by_month[ledger.by_month.length - 1]?.month ?? ledger.as_of.slice(0, 7))} runs to ${longDate(ledger.as_of)}`}
+              />
+              <Chart
+                kind="bar"
+                title="Cost by cost code"
+                unit="money"
+                points={ledger.cost_by_code.map((c) => COST_CODES[c.cost_code] ?? words(c.cost_code))}
+                series={[{ label: 'Logged by project teams', values: ledger.cost_by_code.map((c) => Number(c.ops_cost)) }]}
+                note={
+                  ledger.ledger_cost_accounts.length === 1
+                    ? `This is the project teams' cost log. The ledger posts all job cost to one account, ${ledger.ledger_cost_accounts[0]}, so it cannot be split by cost code`
+                    : "This is the project teams' cost log"
+                }
+              />
+            </div>
 
-      <IssuesByType summary={summary} />
+            <ContractFlow flow={flow} />
+
+            <div className="grid grid-cols-1 gap-4 @[60rem]:grid-cols-2">
+              <Chart
+                kind="bar"
+                title="What customers owe, by days late"
+                unit="money"
+                points={ledger.receivables_by_age.map((a) => AGES[a.bucket])}
+                series={[{ label: 'Unpaid on sent invoices', values: ledger.receivables_by_age.map((a) => Number(a.amount)) }]}
+                note="Invoices that have been sent and not fully paid. Invoices not yet sent are not in this"
+              />
+              <Card>
+                <CardHead title="Profit by kind of work, per ledger" />
+                <div className="overflow-x-auto">
+                  <table className="data-table dense">
+                    <thead>
+                      <tr>
+                        <th>Kind of work</th>
+                        <th className="num">Jobs</th>
+                        <th className="num">Revenue</th>
+                        <th className="num">Cost</th>
+                        <th className="num">Profit</th>
+                        <th className="num">Margin</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ledger.by_service_line.map((kind) => (
+                        <tr key={kind.service_line}>
+                          <td>{words(kind.service_line)}</td>
+                          <td className="num">{kind.jobs}</td>
+                          <td className="num">{money(kind.revenue)}</td>
+                          <td className="num">{money(kind.cost)}</td>
+                          <td className={`num ${Number(kind.profit) < 0 ? 'text-neg' : ''}`}>{money(kind.profit)}</td>
+                          <td className="num">{percent(kind.margin_pct)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+          </>
+        )}
+      </Loaded>
 
       <Card>
-        <CardHead title="Jobs to look at first">
-          <Link to="/jobs" className={buttonClass()}>
+        <CardHead title="Lowest margin first">
+          <Link to="/jobs?sort=margin&order=asc" className={buttonClass()}>
             All jobs
           </Link>
         </CardHead>
-        <Loaded query={first}>{(page) => <JobTable jobs={page.data} />}</Loaded>
+        <Loaded query={thin}>{(page) => <JobTable jobs={page.data} full />}</Loaded>
       </Card>
+    </>
+  )
+}
+
+const PACE_FLAGS: Record<Operations['in_progress'][number]['flags'][number], string> = {
+  past_finish: 'Past finish',
+  no_activity: 'No work logged',
+  budget_burn: 'Spending ahead',
+}
+
+/** A short date, or a dash when there is none. */
+function day(value: string | null): string {
+  return value ? shortDate(value) : ''
+}
+
+/**
+ * Operations' view across every job, one block for each thing Luis has to know:
+ * whether urgent jobs started quickly, which won jobs are still waiting to start,
+ * how each job in progress is pacing against its time and budget, and who owns what.
+ */
+function OperationsOverview({ summary }: { summary: Summary }) {
+  const navigate = useNavigate()
+  const ops = useQuery({ queryKey: ['operations'], queryFn: api.operations })
+
+  return (
+    <>
+      <PageHead title="Operations" sub={`${plural(summary.job_count, 'job')}, as of ${longDate(summary.as_of)}`} />
+
+      <Loaded query={ops}>
+        {(data) => {
+          const onTime = data.urgent.filter((job) => job.started_in_time).length
+          const fromDamage = data.urgent
+            .map((job) => job.days_damage_to_site)
+            .filter((days): days is number => days !== null)
+            .sort((a, b) => a - b)
+          const median = fromDamage.length ? fromDamage[Math.floor((fromDamage.length - 1) / 2)] : null
+          const slow = data.waiting.filter((job) => job.slow).length
+          const stalled = data.in_progress.filter((job) => job.flags.includes('past_finish') || job.flags.includes('no_activity')).length
+          const ahead = data.in_progress.filter((job) => job.flags.includes('budget_burn')).length
+          const offPace = data.in_progress.filter((job) => job.flags.length > 0).length
+          const unowned = data.owners.find((owner) => owner.name === 'None assigned')
+          const unownedJobs = unowned ? unowned.jobs_in_progress + unowned.jobs_not_started : 0
+
+          return (
+            <>
+              <div className={STATS}>
+                <Stat
+                  label="Urgent jobs, damage to on site"
+                  value={median === null ? 'No dates' : `${median} ${median === 1 ? 'day' : 'days'}`}
+                  note={`Median. ${onTime} of ${data.urgent.length} on site the day they were won`}
+                />
+                <Stat
+                  label="Won, not yet on site"
+                  value={data.waiting.length}
+                  note={slow ? `${plural(slow, 'job')} slower than ${data.start_tolerance_days} days` : 'All within tolerance'}
+                />
+                <Stat
+                  label="In progress, off pace"
+                  value={`${offPace} of ${data.in_progress.length}`}
+                  note={`${stalled} stalled, ${ahead} spending ahead of schedule`}
+                />
+                <Stat
+                  label="Active jobs with no ops manager"
+                  value={unownedJobs}
+                  note={`of ${plural(data.in_progress.length + data.waiting.length, 'active job')}`}
+                />
+              </div>
+
+              <Card>
+                <CardHead title="Jobs in progress, against their time and budget" />
+                <p className="px-5 pb-3 text-[0.8125rem] text-ink-2">
+                  A job that has used more of its budget than of its time will run out of money before it finishes. This
+                  shows it while there is still time to act
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="data-table dense">
+                    <thead>
+                      <tr>
+                        <th>Job ID</th>
+                        <th>Job</th>
+                        <th className="max-xl:hidden">Ops manager</th>
+                        <th>Finish</th>
+                        <th className="num">Time gone</th>
+                        <th className="num">Budget used</th>
+                        <th className="max-lg:hidden">Last work</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.in_progress.map((job) => {
+                        const ahead = job.budget_used_pct !== null && job.time_gone_pct !== null
+                          && Number(job.budget_used_pct) > Number(job.time_gone_pct)
+                        return (
+                          <tr key={job.job_number} className="clickable" onClick={() => navigate(`/jobs/${job.job_number}`)}>
+                            <td className="font-mono text-[0.8125rem] text-ink-2">{job.job_number}</td>
+                            <td>
+                              <Link
+                                to={`/jobs/${job.job_number}`}
+                                className="block max-w-[18rem] truncate"
+                                title={job.name}
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                {job.name}
+                              </Link>
+                            </td>
+                            <td className={`max-xl:hidden ${job.ops_manager ? 'text-ink-2' : 'text-accent-ink'}`}>
+                              {job.ops_manager ?? 'None assigned'}
+                            </td>
+                            <td className={job.flags.includes('past_finish') ? 'text-accent-ink' : 'text-ink-2'}>
+                              {day(job.planned_finish_on)}
+                            </td>
+                            <td className="num text-ink-2">{percent(job.time_gone_pct)}</td>
+                            <td className={`num ${ahead && job.flags.includes('budget_burn') ? 'text-accent-ink' : ''}`}>
+                              {percent(job.budget_used_pct)}
+                            </td>
+                            <td className={`max-lg:hidden ${job.flags.includes('no_activity') ? 'text-accent-ink' : 'text-ink-2'}`}>
+                              {day(job.last_work_on)}
+                            </td>
+                            <td>
+                              {job.flags.length ? (
+                                <Tags tags={job.flags.map((flag) => ({ key: flag, label: PACE_FLAGS[flag] }))} />
+                              ) : (
+                                <span className="text-ink-2">On track</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+
+              <Card>
+                <CardHead title="Won, not yet on site" />
+                <p className="px-5 pb-3 text-[0.8125rem] text-ink-2">
+                  Planned work should be on site within {data.start_tolerance_days} days of the win, urgent work within a day
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Job ID</th>
+                        <th>Job</th>
+                        <th>Ops manager</th>
+                        <th>Won</th>
+                        <th>Planned start</th>
+                        <th className="num">Days from win to start</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.waiting.map((job) => (
+                        <tr key={job.job_number} className="clickable" onClick={() => navigate(`/jobs/${job.job_number}`)}>
+                          <td className="font-mono text-[0.8125rem] text-ink-2">{job.job_number}</td>
+                          <td>
+                            <Link to={`/jobs/${job.job_number}`} onClick={(event) => event.stopPropagation()}>
+                              {job.name}
+                            </Link>
+                          </td>
+                          <td className={job.ops_manager ? 'text-ink-2' : 'text-accent-ink'}>{job.ops_manager ?? 'None assigned'}</td>
+                          <td className="text-ink-2">{day(job.won_on)}</td>
+                          <td className="text-ink-2">{job.on_site_on ? shortDate(job.on_site_on) : 'Not set'}</td>
+                          <td className={`num ${job.slow ? 'text-accent-ink' : ''}`}>{job.days_win_to_start ?? ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+
+              <Card>
+                <CardHead title="Urgent jobs, from damage to on site" />
+                <p className="px-5 pb-3 text-[0.8125rem] text-ink-2">Urgent means {data.urgent_rule.charAt(0).toLowerCase() + data.urgent_rule.slice(1)}</p>
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Job ID</th>
+                        <th>Job</th>
+                        <th className="max-2xl:hidden">Why urgent</th>
+                        <th>Damage</th>
+                        <th>Won</th>
+                        <th>On site</th>
+                        <th className="num">Days from damage to site</th>
+                        <th className="num">Days from win to site</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.urgent.map((job) => (
+                        <tr key={job.job_number} className="clickable" onClick={() => navigate(`/jobs/${job.job_number}`)}>
+                          <td className="font-mono text-[0.8125rem] text-ink-2">{job.job_number}</td>
+                          <td>
+                            <Link
+                              to={`/jobs/${job.job_number}`}
+                              className="block max-w-[18rem] truncate"
+                              title={job.name}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              {job.name}
+                            </Link>
+                          </td>
+                          <td className="text-ink-2 max-2xl:hidden">{job.urgent_reason}</td>
+                          <td className="text-ink-2">{day(job.incident_on)}</td>
+                          <td className="text-ink-2">{day(job.won_on)}</td>
+                          <td className="text-ink-2">{day(job.on_site_on)}</td>
+                          <td className="num">{job.days_damage_to_site ?? ''}</td>
+                          <td className={`num ${job.started_in_time ? '' : 'text-accent-ink'}`}>{job.days_win_to_site ?? ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+
+              <Card>
+                <CardHead title="Who owns what">
+                  <Link to="/issues" className={buttonClass()}>
+                    All issues
+                  </Link>
+                </CardHead>
+                <div className="overflow-x-auto">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Ops manager</th>
+                        <th className="num">In progress</th>
+                        <th className="num">Not started</th>
+                        <th className="num">To fix</th>
+                        <th className="num">Need action</th>
+                        <th className="num">About schedule</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.owners.map((owner) => {
+                        const nobody = owner.name === 'None assigned'
+                        const to = nobody ? '/issues?type=no_owner' : `/issues?owner=${encodeURIComponent(owner.name)}`
+                        return (
+                          <tr key={owner.name} className="clickable" onClick={() => navigate(to)}>
+                            <td className={nobody ? 'text-accent-ink' : ''}>
+                              <Link to={to} onClick={(event) => event.stopPropagation()}>
+                                {owner.name}
+                              </Link>
+                            </td>
+                            <td className="num">{owner.jobs_in_progress}</td>
+                            <td className="num">{owner.jobs_not_started}</td>
+                            <td className="num">{owner.open_items}</td>
+                            <td className="num">{owner.needing_action}</td>
+                            <td className="num">{owner.schedule_items}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </>
+          )
+        }}
+      </Loaded>
     </>
   )
 }
@@ -268,7 +573,15 @@ export function Overview() {
 
   return (
     <Loaded query={summary}>
-      {(data) => (viewer.owner ? <MyOverview summary={data} owner={viewer.owner} /> : <CompanyOverview summary={data} />)}
+      {(data) =>
+        viewer.owner ? (
+          <MyOverview summary={data} owner={viewer.owner} />
+        ) : viewer.home === 'finance' ? (
+          <FinanceOverview summary={data} />
+        ) : (
+          <OperationsOverview summary={data} />
+        )
+      }
     </Loaded>
   )
 }

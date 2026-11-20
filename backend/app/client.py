@@ -46,9 +46,10 @@ from app.financials import (
     compute_financials,
     contract_stages,
     latest_run_id,
+    margin_pct,
 )
 from app.issues import DOCUMENT_TYPES, FINANCE_QUEUE, UNSENT_STATUSES, apply_action, find_issues
-from app.items import DOCUMENT_KINDS, KIND_OF, TITLES, build_items, fingerprint, group_by_job, what_to_ask, with_whom, working_days_from
+from app.items import DOCUMENT_KINDS, KIND_OF, SCHEDULE_KINDS, TITLES, build_items, fingerprint, group_by_job, what_to_ask, with_whom, working_days_from
 from app.landing import land
 from app.models import (
     AskExchange,
@@ -72,7 +73,17 @@ from app.schemas import (
     AskResponse,
     CashSummary,
     CodingResponse,
+    CostByCode,
+    JobPace,
+    OperationsResponse,
+    OwnerLoad,
+    UrgentStart,
+    WaitingStart,
     CountedOnce,
+    FinanceMonth,
+    FinanceResponse,
+    ReceivableAge,
+    WorkKindProfit,
     ItemActionRequest,
     ItemFilters,
     ItemResponse,
@@ -113,6 +124,7 @@ from app.serializers import (
     job_detail_response,
     job_summary_response,
     line_response,
+    owner_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -534,6 +546,8 @@ class ReconClient:
         if payload.tolerance is not None:
             if issue_type.tolerance_unit is None:
                 raise InvalidRequestError(f"'{issue_type.title}' has no tolerance to set.")
+            if issue_type.tolerance_unit == "days" and (payload.tolerance < 1 or payload.tolerance != int(payload.tolerance)):
+                raise InvalidRequestError("A tolerance in days must be a whole number of at least 1.")
             issue_type.tolerance = payload.tolerance
         await self.db.commit()
         found = await self._found_by_type(key)
@@ -1010,6 +1024,24 @@ class ReconClient:
                 )
             return Recipient(audience="customer", name="Accounts payable", role="The customer's payables desk", email=None)
 
+        if item.kind in SCHEDULE_KINDS and item.job_number:
+            people = dict(
+                (await self.db.execute(
+                    select(JobOwner.role, JobOwner)
+                    .join(Job, Job.id == JobOwner.job_id)
+                    .where(Job.job_number == item.job_number)
+                )).all()
+            )
+            manager, executive = people.get("ops_manager"), people.get("account_executive")
+            # The ops manager answers for the schedule. Written by the ops manager, it goes
+            # to the account executive, who keeps the customer informed.
+            if manager and manager.name.lower() != writer.lower():
+                return Recipient(audience="internal", name=manager.name, role="The job's ops manager", email=manager.email)
+            if executive and executive.name.lower() != writer.lower():
+                return Recipient(
+                    audience="internal", name=executive.name, role="The job's account executive, who keeps the customer informed",
+                    email=executive.email,
+                )
         finance = Recipient(audience="internal", name="Finance", role="Harborstone's finance team", email=None)
         on_the_job = item.owner != FINANCE_QUEUE
         writer_has_it = item.owner.lower() == writer.lower()
@@ -1049,6 +1081,182 @@ class ReconClient:
         return messages
 
     # --- Source records ----------------------------------------------------------
+
+    async def get_operations(self) -> OperationsResponse:
+        """Luis's questions, one list each: did urgent jobs start quickly, which jobs are waiting
+        to start, how is each job in progress pacing, and who owns what."""
+        run = await self._current_run()
+        tolerance = await self.db.scalar(select(IssueType.tolerance).where(IssueType.key == "slow_start"))
+        allowed = int(tolerance or 14)
+        jobs = list(
+            await self.db.execute(
+                select(Job, JobFinancials)
+                .join(JobFinancials, and_(JobFinancials.job_id == Job.id, JobFinancials.sync_run_id == run.id))
+                .options(selectinload(Job.owners))
+                .order_by(Job.job_number)
+            )
+        )
+        days = lambda later, earlier: (later - earlier).days if later and earlier else None  # noqa: E731
+
+        last_work = dict(
+            (
+                await self.db.execute(
+                    select(MoneyLine.job_id, func.max(MoneyLine.line_date))
+                    .where(MoneyLine.kind.in_(("ops_cost", BILL)), MoneyLine.job_id.is_not(None))
+                    .group_by(MoneyLine.job_id)
+                )
+            ).all()
+        )
+        flagged: dict[int, set[str]] = defaultdict(set)
+        for job_id, key in await self.db.execute(
+            select(Issue.job_id, Issue.type_key).where(
+                Issue.status.in_(ACTIVE), Issue.type_key.in_(("past_finish", "no_activity", "budget_burn"))
+            )
+        ):
+            flagged[job_id].add(key)
+
+        urgent, waiting, pace = [], [], []
+        for job, fin in jobs:
+            manager = owner_name(job, "ops_manager")
+            if job.urgent_reason and job.stage not in ("WORK_NOT_STARTED", "CANCELLED"):
+                win = days(job.on_site_on, job.won_on)
+                urgent.append(UrgentStart(
+                    job_number=job.job_number, name=job.name, urgent_reason=job.urgent_reason,
+                    incident_on=job.incident_on, won_on=job.won_on, on_site_on=job.on_site_on,
+                    days_damage_to_site=days(job.on_site_on, job.incident_on), days_win_to_site=win,
+                    started_in_time=win is not None and win <= 1,
+                ))
+            if job.stage == "WORK_NOT_STARTED":
+                wait = days(job.on_site_on or run.as_of, job.won_on)
+                waiting.append(WaitingStart(
+                    job_number=job.job_number, name=job.name, ops_manager=manager, urgent_reason=job.urgent_reason,
+                    won_on=job.won_on, on_site_on=job.on_site_on, days_win_to_start=wait,
+                    slow=wait is not None and wait > (1 if job.urgent_reason else allowed),
+                ))
+            if job.stage == "IN_PROGRESS":
+                span = days(job.planned_finish_on, job.on_site_on)
+                gone = days(run.as_of, job.on_site_on)
+                cost = max(fin.ops_cost, fin.ledger_cost)
+                pace.append(JobPace(
+                    job_number=job.job_number, name=job.name, ops_manager=manager, on_site_on=job.on_site_on,
+                    planned_finish_on=job.planned_finish_on,
+                    time_gone_pct=round(Decimal(min(gone, span)) / span * 100, 1) if span and gone is not None else None,
+                    budget_used_pct=round(cost / job.budget * 100, 1) if job.budget else None,
+                    last_work_on=last_work.get(job.id),
+                    flags=sorted(flagged.get(job.id, ())),
+                ))
+        # Most urgent first: the slowest to start, then the ones waiting longest, then the ones with most wrong.
+        urgent.sort(key=lambda u: (u.started_in_time, -(u.days_damage_to_site or 0)))
+        waiting.sort(key=lambda w: (not w.slow, -(w.days_win_to_start or 0)))
+        pace.sort(key=lambda p: (-len(p.flags), -(p.budget_used_pct or 0) + (p.time_gone_pct or 0)))
+
+        open_items = (await self.list_items(ItemFilters(state="open"))).groups
+        loads: dict[str, dict] = defaultdict(lambda: defaultdict(int))
+        for job, _ in jobs:
+            name = owner_name(job, "ops_manager") or "None assigned"
+            if job.stage == "IN_PROGRESS":
+                loads[name]["jobs_in_progress"] += 1
+            elif job.stage == "WORK_NOT_STARTED":
+                loads[name]["jobs_not_started"] += 1
+            else:
+                loads[name].setdefault("jobs_in_progress", 0)  # listed even when nothing is active
+        for group in open_items:
+            if group.job_number is None:
+                continue
+            name = group.ops_manager or "None assigned"
+            for item in group.items:
+                loads[name]["open_items"] += 1
+                loads[name]["needing_action"] += item.state == "needs_action"
+                loads[name]["schedule_items"] += item.kind in SCHEDULE_KINDS
+        owners = [OwnerLoad(name=name, **counts) for name, counts in loads.items()]
+        owners.sort(key=lambda o: (o.name == "None assigned", -o.open_items, o.name))
+
+        return OperationsResponse(
+            as_of=run.as_of,
+            urgent_rule="Mitigation work, or a job tied to a named catastrophe. The CRM has an urgency field, but it is empty on every record",
+            start_tolerance_days=allowed,
+            urgent=urgent, waiting=waiting, in_progress=pace, owners=owners,
+        )
+
+    async def get_finance(self) -> FinanceResponse:
+        """The ledger's view across every job: revenue, cost and cash by month, where cost
+        went by cost code, how late receivables are, and profit by kind of work."""
+        run = await self._current_run()
+        line = MoneyLine
+        on_a_job = line.job_id.in_(select(JobFinancials.job_id).where(JobFinancials.sync_run_id == run.id))
+
+        def of(kind: str):
+            return total_of(line.amount, line.kind == kind)
+
+        month = func.to_char(line.line_date, "YYYY-MM")
+        months = await self.db.execute(
+            select(month.label("month"), of("ledger_revenue"), of("ledger_cost"), of(INVOICE), of("customer_payment"))
+            .where(line.kind.in_(("ledger_revenue", "ledger_cost", INVOICE, "customer_payment")), line.line_date.is_not(None), on_a_job)
+            .group_by(month)
+            .order_by(month)
+        )
+        codes = await self.db.execute(
+            select(line.cost_category, total_of(line.amount))
+            .where(line.kind == "ops_cost", line.cost_category.is_not(None), on_a_job)
+            .group_by(line.cost_category)
+            .order_by(total_of(line.amount).desc())
+        )
+        accounts = await self.db.scalars(
+            select(line.description).where(line.kind == "ledger_cost", on_a_job).distinct().order_by(line.description)
+        )
+
+        days_late = run.as_of - line.due_date
+        bucket = case(
+            (or_(line.due_date.is_(None), line.due_date >= run.as_of), "not_due"),
+            (days_late <= 30, "late_1_30"),
+            (days_late <= 60, "late_31_60"),
+            else_="late_over_60",
+        )
+        unpaid = line.amount - line.paid_amount
+        aged = {
+            key: (count, amount)
+            for key, count, amount in await self.db.execute(
+                select(bucket, func.count(), total_of(unpaid))
+                .where(line.kind == INVOICE, line.status == "SENT", unpaid > 0)
+                .group_by(bucket)
+            )
+        }
+
+        fin = JobFinancials
+        kinds = await self.db.execute(
+            select(Job.service_line, func.count(), total_of(fin.ledger_revenue), total_of(fin.ledger_cost))
+            .join(fin, fin.job_id == Job.id)
+            .where(fin.sync_run_id == run.id)
+            .group_by(Job.service_line)
+            .order_by(total_of(fin.ledger_revenue).desc())
+        )
+        by_kind = [
+            WorkKindProfit(
+                service_line=kind or "UNKNOWN", jobs=jobs, revenue=revenue, cost=cost,
+                profit=revenue - cost, margin_pct=margin_pct(revenue, cost),
+            )
+            for kind, jobs, revenue, cost in kinds
+        ]
+        revenue = sum((kind.revenue for kind in by_kind), ZERO)
+        cost = sum((kind.cost for kind in by_kind), ZERO)
+        return FinanceResponse(
+            as_of=run.as_of,
+            revenue=revenue,
+            cost=cost,
+            profit=revenue - cost,
+            margin_pct=margin_pct(revenue, cost),
+            by_month=[
+                FinanceMonth(month=m, revenue=earned, cost=spent, invoiced=invoiced, collected=collected)
+                for m, earned, spent, invoiced, collected in months
+            ],
+            cost_by_code=[CostByCode(cost_code=code, ops_cost=amount) for code, amount in codes],
+            ledger_cost_accounts=[text.removeprefix("Account ") for text in accounts if text],
+            receivables_by_age=[
+                ReceivableAge(bucket=key, invoices=aged.get(key, (0, ZERO))[0], amount=aged.get(key, (0, ZERO))[1])
+                for key in ("not_due", "late_1_30", "late_31_60", "late_over_60")
+            ],
+            by_service_line=by_kind,
+        )
 
     async def list_sources(self) -> list[SourceSystem]:
         """The three systems the figures come from, with how much of each we hold and when it was last read."""

@@ -107,6 +107,12 @@ class Job(Base):
     crm_status: Mapped[str | None] = mapped_column(String(40))
     stage: Mapped[str] = mapped_column(String(40), index=True)
     won_on: Mapped[date | None] = mapped_column(Date)
+    # When the damage happened, from the CRM. Missing for planned work such as capital projects.
+    incident_on: Mapped[date | None] = mapped_column(Date)
+    loss_type: Mapped[str | None] = mapped_column(String(40))
+    # Why this job has to start at once, when it does. Nothing in the source marks urgency,
+    # so it follows a fixed rule: emergency mitigation work, or part of a named catastrophe.
+    urgent_reason: Mapped[str | None] = mapped_column(String(160))
     estimated_value: Mapped[Decimal | None] = mapped_column(Money)
     contract_value: Mapped[Decimal] = mapped_column(Money, default=0)
     original_contract_value: Mapped[Decimal | None] = mapped_column(Money)

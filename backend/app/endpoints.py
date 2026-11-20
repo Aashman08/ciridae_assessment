@@ -18,6 +18,8 @@ from app.schemas import (
     IssueResponse,
     CodingResponse,
     DraftRequest,
+    FinanceResponse,
+    OperationsResponse,
     DraftResponse,
     IssueTypeResponse,
     ItemActionRequest,
@@ -269,6 +271,30 @@ async def draft_follow_up(issue_id: int, payload: DraftRequest, request: Request
 async def suggest_job_for_issue(issue_id: int, request: Request) -> CodingResponse:
     async with create_recon_client(request.state.request_id) as client:
         return await client.suggest_job_for_issue(issue_id)
+
+
+@router.get(
+    "/operations",
+    tags=["Summary"],
+    summary="Whether jobs start quickly, keep moving, spend at the right pace, and have an owner",
+    response_model=OperationsResponse,
+    responses={409: ERROR_409},
+)
+async def get_operations(request: Request) -> OperationsResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.get_operations()
+
+
+@router.get(
+    "/finance",
+    tags=["Summary"],
+    summary="The ledger's view: revenue, cost and cash by month, cost by cost code, receivables by age",
+    response_model=FinanceResponse,
+    responses={409: ERROR_409},
+)
+async def get_finance(request: Request) -> FinanceResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.get_finance()
 
 
 @router.get("/sources", tags=["Sync Runs"], summary="The source systems and when each was last read", response_model=list[SourceSystem])

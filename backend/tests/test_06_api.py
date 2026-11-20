@@ -40,7 +40,7 @@ async def test_sync_run_reports_what_it_did(api):
     assert (run["status"], run["as_of"]) == ("succeeded", "2026-07-28")
     assert run["stats"]["land"]["tables"] == 42
     assert run["stats"]["normalize"]["jobs"] == 25
-    assert run["stats"]["issues"]["found"] == 62
+    assert run["stats"]["issues"]["found"] == 69
     assert (await get(api, f"/sync-runs/{run['id']}"))["id"] == run["id"]
     latest = await get(api, "/sync-runs", limit=1)
     assert latest["data"][0]["id"] == run["id"]
@@ -81,8 +81,8 @@ async def test_summary_for_finance(api):
         "sent": "2805000.00",
         "collected": "1696536.00",
     }
-    assert (body["open_issue_count"], body["jobs_with_issues"]) == (62, 21)
-    assert len(body["issues_by_type"]) == 13
+    assert (body["open_issue_count"], body["jobs_with_issues"]) == (69, 23)
+    assert len(body["issues_by_type"]) == 17
     assert body["issues_by_type"][0] == {
         "type_key": "past_due", "title": "Customer invoice past due", "severity": "high",
         "count": 5, "amount": "719004.00",
@@ -96,7 +96,7 @@ async def test_summary_for_one_ops_manager(api):
     assert body["cash"]["past_due"] == "419800.00"
     assert body["cash"]["invoices_not_sent"] == "34500.00"
     assert (body["cash"]["vendor_bills_unpaid"], body["cash"]["vendor_bills_count"]) == ("111950.00", 5)
-    assert body["open_issue_count"] == 10
+    assert body["open_issue_count"] == 11
 
 
 # --- Jobs --------------------------------------------------------------------
@@ -111,7 +111,7 @@ async def test_jobs_list_and_filters(api):
     assert (await get(api, "/jobs", stage="closed"))["total"] == 6
     assert (await get(api, "/jobs", owner=TASHA))["total"] == 6
     assert (await get(api, "/jobs", branch="phoenix"))["total"] == 2
-    assert (await get(api, "/jobs", has_issues=False))["total"] == 4
+    assert (await get(api, "/jobs", has_issues=False))["total"] == 2
 
     page = await get(api, "/jobs", limit=5, offset=5)
     assert len(page["data"]) == 5
@@ -145,7 +145,8 @@ async def test_job_detail_puts_revenue_and_cost_figures_side_by_side(api):
         "revenue_basis": "ledger", "cost_basis": "ledger", "revenue": "432500.00", "cost": "318500.00",
         "profit": "114000.00", "margin_pct": "26.4", "planned_margin_pct": "26.00",
     }
-    assert len(job["issues"]) == 4
+    # Four about money, and one about pace: it has spent 72% of its budget with 61% of its time gone.
+    assert sorted(i["type_key"] for i in job["issues"]) == ["budget_burn", "cost_disagree", "not_sent", "past_due", "rev_invoiced"]
     assert [i["doc_number"] for i in job["invoices"]] == ["INV-2026-0502", "INV-2026-0592"]
     assert sorted(b["doc_number"] for b in job["vendor_bills"]) == ["LSR-88412", "RBC-1156"]
     assert job["original_contract_value"] == "618700.00"
@@ -201,15 +202,15 @@ async def test_invoices_and_bills_across_jobs(api):
 
 async def test_issues_list_and_filters(api):
     everything = await get(api, "/issues", limit=200)
-    assert everything["total"] == 62
+    assert everything["total"] == 69
     amounts = [float(i["amount"]) for i in everything["data"]]
     assert amounts == sorted(amounts, reverse=True)
     assert everything["data"][0]["key"] == "past_due:INV-2026-0538"
 
-    assert (await get(api, "/issues", owner=TASHA))["total"] == 10
+    assert (await get(api, "/issues", owner=TASHA))["total"] == 11
     assert (await get(api, "/issues", type="not_sent"))["total"] == 5
-    assert (await get(api, "/issues", job="CTX00080002"))["total"] == 4
-    assert (await get(api, "/issues", severity="high"))["total"] == 22
+    assert (await get(api, "/issues", job="CTX00080002"))["total"] == 5
+    assert (await get(api, "/issues", severity="high"))["total"] == 23
     assert (await get(api, "/issues", status="resolved"))["total"] == 0
     assert (await api.get(f"{API}/issues", params={"colour": "red"})).status_code == 422
 
@@ -265,7 +266,8 @@ async def test_issue_actions_are_validated(api):
 
 async def test_issue_types_list_with_counts(api):
     types = {t["key"]: t for t in await get(api, "/issue-types")}
-    assert len(types) == 13
+    assert len(types) == 17
+    assert (types["slow_start"]["tolerance"], types["slow_start"]["tolerance_unit"]) == ("14", "days")
     assert (types["past_due"]["open_count"], types["past_due"]["open_amount"]) == (5, "719004.00")
     assert (types["cost_disagree"]["tolerance"], types["cost_disagree"]["tolerance_unit"]) == ("0.02", "ratio")
     assert types["no_owner"]["tolerance"] is None
@@ -359,7 +361,7 @@ async def test_openapi_describes_every_route(api):
     assert {
         "/health", "/api/v1/ask", "/api/v1/ask/history", "/api/v1/customer-balances", "/api/v1/sync-runs", "/api/v1/sync-runs/{run_id}", "/api/v1/summary", "/api/v1/jobs",
         "/api/v1/jobs/{job_number}", "/api/v1/jobs/{job_number}/lines", "/api/v1/lines", "/api/v1/issues",
-        "/api/v1/issues/{issue_id}", "/api/v1/issues/{issue_id}/actions", "/api/v1/issues/{issue_id}/draft", "/api/v1/issues/{issue_id}/coding", "/api/v1/issue-types", "/api/v1/people", "/api/v1/sources",
+        "/api/v1/issues/{issue_id}", "/api/v1/issues/{issue_id}/actions", "/api/v1/issues/{issue_id}/draft", "/api/v1/issues/{issue_id}/coding", "/api/v1/issue-types", "/api/v1/people", "/api/v1/sources", "/api/v1/finance", "/api/v1/operations",
         "/api/v1/items", "/api/v1/items/{key}/actions", "/api/v1/items/{key}/draft", "/api/v1/jobs/{job_number}/review",
         "/api/v1/issue-types/{key}", "/api/v1/source-records/{record_id}",
     } == set(paths)
@@ -548,3 +550,44 @@ def test_a_stage_that_runs_ahead_never_goes_negative():
     }
     assert sum(parts.values()) == Decimal(100)
     assert all(p["share_pct"] == 0 for p in contract_stages(Decimal(0), Decimal(0), Decimal(0), Decimal(0), Decimal(0)))
+
+
+async def test_the_finance_view_ties_to_the_ledger_and_the_summary(api, db):
+    from sqlalchemy import text
+
+    finance = await get(api, "/finance")
+    summary = await get(api, "/summary")
+
+    # Revenue, cost and profit are the ledger's, and the same figures the jobs add up to.
+    jobs = (await get(api, "/jobs", limit=100))["data"]
+    assert Decimal(finance["revenue"]) == sum(Decimal(j["ledger_revenue"]) for j in jobs) == Decimal("3249200.00")
+    assert Decimal(finance["cost"]) == sum(Decimal(j["ledger_cost"]) for j in jobs)
+    assert Decimal(finance["profit"]) == Decimal(finance["revenue"]) - Decimal(finance["cost"])
+    assert finance["margin_pct"] == "29.4"
+
+    # By month, each column adds back to its total.
+    months = finance["by_month"]
+    assert [m["month"] for m in months] == ["2026-05", "2026-06", "2026-07"]
+    assert sum(Decimal(m["revenue"]) for m in months) == Decimal(finance["revenue"])
+    assert sum(Decimal(m["cost"]) for m in months) == Decimal(finance["cost"])
+    assert sum(Decimal(m["collected"]) for m in months) == Decimal(summary["contract_to_cash"]["collected"])
+    assert sum(Decimal(m["invoiced"]) for m in months) == Decimal(summary["contract_to_cash"]["invoiced"])
+
+    # Cost by cost code is the project team's split. The ledger posts to one account, so it has none.
+    codes = {c["cost_code"]: Decimal(c["ops_cost"]) for c in finance["cost_by_code"]}
+    assert set(codes) == {"INTERNAL_LABOR", "SPECIALTY_SUBCONTRACTOR", "MATERIALS_AND_SUPPLIES", "EQUIPMENT_RENTAL_AND_FUEL"}
+    assert sum(codes.values()) == await db.scalar(text(
+        "select sum(amount) from recon.money_line where kind = 'ops_cost' and job_id is not null"
+    ))
+    assert finance["ledger_cost_accounts"] == ["5020"]
+
+    # Receivables by age add up to what has been sent and not collected, and the late ones to what is past due.
+    aged = {a["bucket"]: (a["invoices"], Decimal(a["amount"])) for a in finance["receivables_by_age"]}
+    assert list(aged) == ["not_due", "late_1_30", "late_31_60", "late_over_60"]
+    flow = summary["contract_to_cash"]
+    assert sum(amount for _, amount in aged.values()) == Decimal(flow["sent"]) - Decimal(flow["collected"])
+    assert aged["late_1_30"] == (5, Decimal(summary["cash"]["past_due"]))
+
+    kinds = finance["by_service_line"]
+    assert sum(k["jobs"] for k in kinds) == 25
+    assert sum(Decimal(k["profit"]) for k in kinds) == Decimal(finance["profit"])

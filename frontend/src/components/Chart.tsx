@@ -11,6 +11,8 @@ export interface ChartProps {
   points: string[]
   /** Up to three series, each with one value per point. */
   series: { label: string; values: number[] }[]
+  /** Something the reader needs to know to read the chart rightly, said under it. */
+  note?: string
 }
 
 // One colour per series, always in this order, so a series keeps its colour.
@@ -68,7 +70,7 @@ function useMeasure() {
 }
 
 /** A line or bar chart of up to three series. Hover or tap a point to read its values. */
-export function Chart({ kind, title, unit, points, series }: ChartProps) {
+export function Chart({ kind, title, unit, points, series, note }: ChartProps) {
   const { ref, width, rem } = useMeasure()
   const [active, setActive] = useState<number | null>(null)
 
@@ -212,6 +214,8 @@ export function Chart({ kind, title, unit, points, series }: ChartProps) {
           </div>
         )}
       </div>
+
+      {note && <p className="text-xs leading-4 text-muted">{note}</p>}
 
       {/* The same figures as a table, for anyone who is not reading the picture. */}
       <div className="sr-only">

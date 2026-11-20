@@ -13,12 +13,17 @@ uses only that API.
 
 ## Who it is for
 
-- **Rachel Kim, VP of Finance.** She needs profit and cash figures per job
-  that tie back to source records, with every disagreement in view.
+- **Rachel Kim, VP of Finance.** She needs profit and cash figures that tie back
+  to source records. Her first screen is the ledger: revenue, cost and cash by
+  month, cost by cost code, receivables by days late.
 - **Tasha Green, Project Director.** Her team does the follow-ups. She needs
-  a short list of what is stuck on her jobs, largest first, with a next step.
+  a short list of what is stuck on her jobs, largest first, with a next step
+  she can start from the row.
+- **Luis Ortega, VP of Operations.** He sees every job: what each check found
+  and which jobs to look at first.
 
-Both read the same data. Tasha's view is Rachel's, filtered to her jobs.
+All three read the same data. What differs is the first screen and, for Tasha,
+that every page is limited to her own jobs.
 
 ## Run it
 
@@ -100,7 +105,7 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 | Screen | What it is for |
 | --- | --- |
 | Ask | Type a question in plain words. The answer comes with the records it rests on and the lookups that produced it. **Ask AI** in the top bar opens the same conversation beside any page, and it knows which job, issue or list is open |
-| Overview | Finance sees cash owed, invoices not sent, unpaid bills, the contract value split by where the money is, and what each check found. An ops manager sees their own to-do list, largest first, each row with a button that starts its next step |
+| Overview | Depends on who is signed in. **Finance** sees the ledger: profit, revenue, cost and cash by month, cost by cost code, the contract value split by where the money is, receivables by days late, profit by kind of work, and the lowest-margin jobs. **Operations** (every job) sees what each check found and the jobs to look at first. **An ops manager** sees their own to-do list, each row with a button that starts its next step |
 | Jobs | Every job with its revenue, cost, profit and margin. Search by job, number or customer, and sort by any heading. A job's page holds everything about it, including **What needs doing**: the thing to do first, and every item with its next step |
 | Job | Revenue and cost figures side by side. Pick one of each and the profit and margin for that pair appear beside them |
 | Issues | One row per job, with tags for what is wrong and the money flagged, counted once. Opening a row lists each thing to fix on that job. Several checks on one invoice or bill are one item with tags. Each item has a button that starts its next step: a drafted message, a suggested job for a bill, an assignment, a date to wait until, or a dismissal. Bills on no job are a group of their own |
@@ -173,6 +178,7 @@ such as `"246300.00"`. Errors always look like
 | POST | `/issues/{id}/coding` | Suggest which job an unassigned vendor bill belongs to, with confidence and reasons |
 | POST | `/issues/{id}/actions` | `update` saves any of a note, a new owner and a follow-up date together; `resolve` and `reopen` change its status |
 | GET | `/people` | Who an issue can be assigned to |
+| GET | `/finance` | The ledger's view: revenue, cost, invoiced and collected by month, cost by cost code, receivables by days late, profit by kind of work |
 | GET | `/sources` | The three source systems: tables and records held, and when last read |
 | GET | `/customer-balances` | What each customer owes, largest first |
 | POST | `/ask` | Ask a question in plain words. Returns the answer as plain text (`answer`) and laid out for display (`spec`), the lookups used and the records it rests on, and saves the exchange |

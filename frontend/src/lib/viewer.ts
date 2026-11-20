@@ -1,10 +1,10 @@
 import { createContext, useContext } from 'react'
 
 // Who is signed in. There is no sign-in in the demo, so the sidebar lets you
-// switch between the two people it was built for. What a person can see
+// switch between the people it was built for. What a person can see
 // follows from who they are, as it would with a real sign-in.
 export interface Viewer {
-  key: 'rachel' | 'tasha'
+  key: 'rachel' | 'luis' | 'tasha'
   name: string
   role: string
   /** Set for someone who only sees their own jobs. Sent to the API as `owner`. */
@@ -15,6 +15,8 @@ export interface Viewer {
   scope: string
   /** Whether they can change how issues are detected. */
   managesChecks: boolean
+  /** What their first screen is about: the ledger, every job's problems, or their own to-do list. */
+  home: 'finance' | 'operations' | 'own'
 }
 
 export const VIEWERS: Viewer[] = [
@@ -25,6 +27,16 @@ export const VIEWERS: Viewer[] = [
     sees: 'Finance, every job',
     scope: 'All Harborstone jobs',
     managesChecks: true,
+    home: 'finance',
+  },
+  {
+    key: 'luis',
+    name: 'Luis Ortega',
+    role: 'Operations',
+    sees: 'Operations, every job',
+    scope: 'All Harborstone jobs',
+    managesChecks: false,
+    home: 'operations',
   },
   {
     key: 'tasha',
@@ -34,6 +46,7 @@ export const VIEWERS: Viewer[] = [
     sees: 'Operations, her jobs only',
     scope: 'Tasha Green\'s jobs',
     managesChecks: false,
+    home: 'own',
   },
 ]
 
