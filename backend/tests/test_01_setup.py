@@ -19,10 +19,11 @@ OUR_TABLES = {
     ("recon", "issue"),
     ("recon", "issue_evidence"),
     ("recon", "issue_event"),
+    ("recon", "ask_exchange"),
 }
 
 
-async def test_migrations_create_our_twelve_tables(db):
+async def test_migrations_create_our_tables(db):
     rows = await db.execute(
         text(
             "select table_schema, table_name from information_schema.tables "

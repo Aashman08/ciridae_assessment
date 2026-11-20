@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom'
 import { Shell } from './components/Shell'
 import { Empty } from './components/ui'
+import { Ask } from './pages/Ask'
 import { IssueDetail } from './pages/IssueDetail'
 import { Issues } from './pages/Issues'
 import { IssueTypes } from './pages/IssueTypes'
@@ -14,6 +15,7 @@ export function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Overview />} />
+        <Route path="ask" element={<Ask />} />
         <Route path="jobs" element={<Jobs />} />
         <Route path="jobs/:jobNumber" element={<JobDetail />} />
         <Route path="issues" element={<Issues />} />

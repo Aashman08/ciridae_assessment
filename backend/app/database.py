@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     source_schema: str = "source_company"
     # When set, every /api/v1 request must send it in the X-API-Key header.
     api_key: str | None = None
+    # Ask. Without a key the rest of the app works and Ask says it is not set up.
+    openai_api_key: str | None = None
+    # Leave empty to use the OpenAI Agents SDK's default model.
+    ask_model: str | None = None
 
 
 settings = Settings()

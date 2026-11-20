@@ -8,6 +8,9 @@ from app.client import create_recon_client
 from app.financials import CostBasis, RevenueBasis
 from app.middleware import require_api_key
 from app.schemas import (
+    AskRequest,
+    AskResponse,
+    CustomerBalance,
     ErrorResponse,
     IssueAction,
     IssueDetailResponse,
@@ -33,6 +36,8 @@ ERROR_401 = {"model": ErrorResponse, "description": "Missing or wrong API key."}
 ERROR_404 = {"model": ErrorResponse, "description": "Resource not found."}
 ERROR_409 = {"model": ErrorResponse, "description": "The current state does not allow this."}
 ERROR_500 = {"model": ErrorResponse, "description": "Unexpected server error."}
+ERROR_502 = {"model": ErrorResponse, "description": "The model could not answer."}
+ERROR_503 = {"model": ErrorResponse, "description": "Ask has no API key configured."}
 
 health_router = APIRouter()
 router = APIRouter(
@@ -145,6 +150,62 @@ async def list_job_lines(
 async def list_lines(filters: Annotated[LineFilters, Query()], request: Request) -> ListResponse[LineResponse]:
     async with create_recon_client(request.state.request_id) as client:
         return await client.list_lines(filters)
+
+
+@router.get(
+    "/customer-balances",
+    tags=["Invoices and Bills"],
+    summary="What each customer owes, largest first",
+    response_model=list[CustomerBalance],
+    responses={409: ERROR_409},
+)
+async def list_customer_balances(
+    request: Request,
+    owner: Annotated[str | None, Query(description="Limit to one ops manager's jobs")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+) -> list[CustomerBalance]:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.list_customer_balances(owner, limit)
+
+
+@router.post(
+    "/ask",
+    tags=["Ask"],
+    summary="Ask a question about the data in plain words",
+    response_model=AskResponse,
+    responses={409: ERROR_409, 502: ERROR_502, 503: ERROR_503},
+)
+async def ask(payload: AskRequest, request: Request) -> AskResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.ask(payload)
+
+
+@router.get(
+    "/ask/history",
+    tags=["Ask"],
+    summary="One person's saved conversation, oldest first",
+    response_model=list[AskResponse],
+)
+async def list_ask_history(
+    request: Request,
+    asked_by: Annotated[str, Query(min_length=1, max_length=120, description="Whose conversation")],
+) -> list[AskResponse]:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.list_ask_history(asked_by)
+
+
+@router.delete(
+    "/ask/history",
+    tags=["Ask"],
+    summary="Clear one person's saved conversation",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def clear_ask_history(
+    request: Request,
+    asked_by: Annotated[str, Query(min_length=1, max_length=120, description="Whose conversation")],
+) -> None:
+    async with create_recon_client(request.state.request_id) as client:
+        await client.clear_ask_history(asked_by)
 
 
 @router.get("/issues", tags=["Issues"], response_model=ListResponse[IssueResponse])

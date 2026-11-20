@@ -17,6 +17,7 @@ Source lives in `backend/app/`:
 - `schemas.py` contains Pydantic request and response contracts.
 - `serializers.py` converts database models into API response models.
 - `connector.py` reads rows from the source systems.
+- `assistant.py` is Ask: the agent, its instructions and its fixed tools.
 - `landing.py`, `normalize.py`, `financials.py` and `issues.py` are the four steps
   of a sync, in order.
 - `errors.py`, `exception_handlers.py` and `middleware.py` contain application
@@ -65,7 +66,8 @@ Run from `frontend/`:
   value: `html { font-size }` in `index.css`, currently 112.5%. Only hairlines
   under 4px (borders, rings, outlines) stay in px.
 - Every size and gap is a multiple of 4px at the default scale (0.25rem). One accent colour, used only for what
-  needs a person. One icon set (lucide) at 16px with a 1.5 stroke.
+  needs a person. Charts are the one other place with colour: `--series-1` to
+  `--series-3`, always in that order, drawn by `components/Chart.tsx`. One icon set (lucide) at 16px with a 1.5 stroke.
 - Sentence case everywhere, weights 400 to 600, no uppercase labels, no emoji.
 - Money is formatted by `money()` in `lib/format.ts` and nowhere else. Figures
   use the mono face; words do not.
@@ -81,6 +83,10 @@ Run from `frontend/`:
   sentence, add the separate fields to the API.
 - A row that leads somewhere is clickable across its whole width, with a pointer
   cursor. A button inside it stops the click from also opening the row.
+- The Ask screen is a chat and follows chat conventions: the person's message in a
+  bubble on the right, the reply on the left, the input pinned at the bottom, a
+  spinner while it works, and sources as a vertical list in a panel beside the
+  conversation. It is the one screen with a reading-width column and a side panel.
 - Content fills the window. Do not cap the page width; a cap leaves a dead band on
   wide monitors.
 - After changing a screen, open it in a browser at phone width, at 1440 and at
@@ -100,6 +106,24 @@ query must name what it loads with `selectinload`.
 
 Represent money with `Decimal` and serialize it as a decimal string. Keep profit
 and margin formulas in `financials.py`; do not repeat them in routes or schemas.
+
+## Ask and AI
+
+Figures, totals and issue detection are fixed logic and must stay that way. The
+model in `assistant.py` only answers questions, through tools.
+
+- A tool is a typed, read-only call to one `ReconClient` method. Never add a tool
+  that takes SQL, a table name or a free-form filter.
+- Apply the viewer's scope (`owner`) inside the tool, from the context, never from
+  a model-supplied input.
+- Tools return JSON strings, not Python objects.
+- The reply is typed as well: `AskReply` in `schemas.py`, a list of text, table,
+  figures and chart blocks. The API returns it as a json-render spec and
+  `components/AnswerView.tsx` draws it. To add a kind of block, add it in all
+  three places (the schema, `answer_spec` in `serializers.py`, the catalog); never
+  let the model send markup or free-form layout.
+- Test with the scripted stand-in model in `tests/test_07_ask.py`. Tests must not
+  need an API key or the network.
 
 ## Two Databases
 

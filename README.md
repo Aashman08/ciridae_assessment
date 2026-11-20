@@ -59,6 +59,8 @@ Settings are read from `backend/.env` (copied from `.env.example`):
 | `SOURCE_DATABASE_URL` | `postgresql+psycopg:///harborstone` | Harborstone's database with the export. Opened read-only |
 | `SOURCE_SCHEMA` | `source_company` | Schema holding the export |
 | `API_KEY` | not set | When set, every `/api/v1` request must send it as `X-API-Key` |
+| `OPENAI_API_KEY` | not set | Turns on Ask. Without it everything else works and Ask says it is not set up |
+| `ASK_MODEL` | not set | Model for Ask. Empty uses the OpenAI Agents SDK default |
 
 ## Tests
 
@@ -66,7 +68,7 @@ Settings are read from `backend/.env` (copied from `.env.example`):
 cd backend && uv run pytest
 ```
 
-73 tests. Each run builds two databases of its own, `harborstone_test` from
+91 tests. Each run builds two databases of its own, `harborstone_test` from
 `source_data.sql` and an empty `harborstone_recon_test`, so the working
 databases are never touched. Every test module starts with our tables empty.
 Expected figures are tied to the export: for example $3,174,100 invoiced,
@@ -96,6 +98,7 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 
 | Screen | What it is for |
 | --- | --- |
+| Ask | Type a question in plain words. The answer comes with the records it rests on and the lookups that produced it |
 | Overview | Finance sees cash owed, invoices not sent, unpaid bills, contract-to-cash totals and issues by type. An ops manager sees their own to-do list, largest first |
 | Jobs | Every job with the figures each system holds for it |
 | Job | Revenue and cost figures side by side. Pick one of each and the profit and margin for that pair appear beside them |
@@ -139,7 +142,7 @@ database is a separate one, and the connection to it is read-only:
 | Schema | Tables |
 | --- | --- |
 | `raw` | `source_record` |
-| `recon` | `sync_run`, `company`, `job`, `job_owner`, `cost_code_map`, `money_line`, `job_financials`, `issue_type`, `issue`, `issue_evidence`, `issue_event` |
+| `recon` | `sync_run`, `company`, `job`, `job_owner`, `cost_code_map`, `money_line`, `job_financials`, `issue_type`, `issue`, `issue_evidence`, `issue_event`, `ask_exchange` |
 
 ## API
 
@@ -161,9 +164,62 @@ such as `"246300.00"`. Errors always look like
 | GET | `/issues` | The work queue, largest first. Filter by `type`, `owner`, `status`, `severity`, `job` |
 | GET | `/issues/{id}` | One issue with its evidence and history |
 | POST | `/issues/{id}/actions` | Assign, comment, resolve or reopen |
+| GET | `/customer-balances` | What each customer owes, largest first |
+| POST | `/ask` | Ask a question in plain words. Returns the answer as plain text (`answer`) and laid out for display (`spec`), the lookups used and the records it rests on, and saves the exchange |
+| GET, DELETE | `/ask/history?asked_by=` | Read or clear one person's saved conversation |
 | GET | `/issue-types` | The checks, their settings and what each has found |
 | PATCH | `/issue-types/{key}` | Switch a check off or change its tolerance |
 | GET | `/source-records/{id}` | The untouched source row behind any number |
+
+## Ask: where AI is used, and where it is not
+
+The figures and the thirteen checks are fixed logic, so the same data always
+gives the same answer and every number can be traced. AI is used for one thing:
+answering questions about that data in plain words.
+
+It is built on the OpenAI Agents SDK, in `backend/app/assistant.py`.
+
+- **The model cannot query the database.** It can only choose one of nine
+  tools and fill in that tool's typed inputs. Our code checks the inputs and
+  runs the query.
+- **Each tool is an existing operation** on the same client the API uses, so
+  an answer's figures are the app's figures.
+- **Scope is enforced in our code.** Someone who sees only their own jobs
+  gets only those, whatever the model asks for.
+- **Answers show their working.** Each comes back with the lookups used and
+  the jobs, invoices and issues it rests on.
+- **Figures are checked in our code.** Every dollar figure in an answer is
+  compared with what the tools returned. Any the assistant calculated itself
+  (a sum or a difference) is listed separately, and an incomplete figure such
+  as "$113,?" is sent back once and then refused.
+- **Read-only.** No tool changes anything.
+- **The answer's layout is fixed too.** The model must reply with a list of
+  blocks from a set of four (text, table, figures, and a line or bar chart), checked against a schema
+  before we see it; anything else is refused. The API returns them as a
+  [json-render](https://json-render.dev) spec, and the web app draws that spec
+  with its own components, so a table in an answer is the same table as
+  everywhere else. A chart is drawn by the app from the numbers in the block;
+  for anything by month those numbers come from a fixed SQL total
+  (`totals_by_month`), not from the model adding up invoices. Figures inside tables go through the same check as figures
+  in sentences.
+- **Conversations are saved per person** in `recon.ask_exchange`, so a
+  conversation is still there after leaving the page or reloading. The last six
+  exchanges are given to the model so a follow-up question makes sense.
+- **Nothing is uploaded as a trace.** SDK tracing is switched off.
+
+| Tool | What it returns |
+| --- | --- |
+| `company_summary` | Cash owed, past due, unsent invoices, unpaid bills, contract-to-cash totals, issues by type |
+| `list_jobs` | Jobs with each system's figures. Inputs: stage, branch, has_issues, limit |
+| `get_job` | One job in full, with profit for a chosen revenue and cost figure |
+| `list_issues` | Issues, largest first. Inputs: issue_type, severity, job_number, status, limit |
+| `list_issue_types` | What each check looks for and what it has found |
+| `list_invoices` | Customer invoices, largest unpaid first |
+| `list_vendor_bills` | Vendor bills, largest unpaid first. Input: no_job |
+| `owed_by_customer` | What each customer owes and how much is past due |
+
+Adding a capability means adding a tool with fixed inputs. There is no tool
+that accepts SQL, a table name or a free-form filter.
 
 ## Design decisions
 
@@ -200,7 +256,8 @@ such as `"246300.00"`. Errors always look like
 | Writing back to source systems | Not built. The app records what people did; it does not send invoices, approve bills or email customers |
 | Vendor inbox and documents | Copied as raw rows only; nothing in the API uses them. The export has subjects and file names but no bodies |
 | Sign-in | Not built. A "Signed in as" switcher at the top of the sidebar stands in for it, and decides what every page shows |
-| AI assistance | Not built yet. It would call this API |
+| Ask | Built. Tests use a stand-in model; real answers need `OPENAI_API_KEY` |
+| AI that proposes new issue types, matches vendor emails or drafts follow-ups | Not built |
 
 ## Process
 

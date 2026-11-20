@@ -8,6 +8,18 @@ export function money(value: Money | number | null | undefined): string {
   return dollars.format(Number(value)).replace('-', '−')
 }
 
+const shortDollars = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+})
+
+/** Money where there is only room for a few characters, such as a chart axis: $1.2M, $500K. */
+export function moneyShort(value: number): string {
+  return shortDollars.format(value).replace('-', '−')
+}
+
 export function percent(value: string | null | undefined): string {
   return value === null || value === undefined ? '' : `${Number(value).toFixed(1)}%`.replace('-', '−')
 }

@@ -1,5 +1,7 @@
 """FastAPI application declaration and registration."""
 
+import logging
+
 from fastapi import FastAPI
 
 from app.database import lifespan
@@ -7,6 +9,10 @@ from app.endpoints import health_router, router
 from app.errors import APIError
 from app.exception_handlers import api_error_response
 from app.middleware import request_id_middleware
+
+# Our own messages (sync results, what each Ask question used) go to the terminal.
+logging.getLogger("app").setLevel(logging.INFO)
+logging.basicConfig(format="%(levelname)s:     %(name)s: %(message)s")
 
 app = FastAPI(
     title="Harborstone Reconciliation API",

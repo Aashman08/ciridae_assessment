@@ -1,5 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
-import { Check, ChevronRight, ChevronsUpDown, FileText, HardHat, LayoutDashboard, ListChecks, Receipt, TriangleAlert } from 'lucide-react'
+import {
+  Check,
+  ChevronRight,
+  ChevronsUpDown,
+  FileText,
+  HardHat,
+  LayoutDashboard,
+  ListChecks,
+  MessageCircleQuestion,
+  Receipt,
+  TriangleAlert,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -21,6 +32,7 @@ interface Section {
 
 const SECTIONS: Section[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard },
+  { to: '/ask', label: 'Ask', icon: MessageCircleQuestion },
   { to: '/jobs', label: 'Jobs', icon: HardHat },
   { to: '/issues', label: 'Issues', icon: TriangleAlert },
   { to: '/invoices', label: 'Customer invoices', icon: Receipt },

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, model_validator
 
 from app.financials import CostBasis, RevenueBasis
 
@@ -314,3 +314,151 @@ class SourceRecordResponse(BaseModel):
     first_seen_run_id: int
     last_changed_run_id: int
     last_seen_run_id: int
+
+
+# --- Customers -----------------------------------------------------------------
+
+
+class MonthTotal(BaseModel):
+    """What was invoiced or billed in one calendar month."""
+
+    month: str = Field(description="The calendar month, as YYYY-MM")
+    count: int
+    amount: Money
+    paid: Money
+    unpaid: Money
+    sent: Money = Field(description="Customer invoices only: the amount on invoices that have been sent")
+
+
+class CustomerBalance(BaseModel):
+    customer: str
+    open_invoice_count: int = Field(description="Invoices with a balance still owed")
+    owed: Money
+    past_due: Money
+
+
+# --- Ask -----------------------------------------------------------------------
+
+
+class AskMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=8000)
+
+
+class AskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    question: str = Field(min_length=1, max_length=1000)
+    asked_by: str = Field("anonymous", min_length=1, max_length=120, description="Who is asking. Their conversation is kept under this name")
+    owner: str | None = Field(None, description="Limit every answer to one ops manager's jobs")
+
+
+class AskSource(BaseModel):
+    kind: Literal["job", "issue", "invoice", "vendor_bill"]
+    id: str = Field(description="Job number for a job, invoice or bill; issue id for an issue")
+    label: str
+
+
+class AskStep(BaseModel):
+    tool: str
+    arguments: dict
+
+
+class AskText(BaseModel):
+    """A sentence or short paragraph."""
+
+    type: Literal["text"]
+    text: str = Field(min_length=1)
+
+
+class AskColumn(BaseModel):
+    label: str
+    kind: Literal["text", "money", "number", "date"] = Field(description="What the column holds, which decides how it is set")
+
+
+class AskTable(BaseModel):
+    """Several records with the same facts about each: one record per row, one fact per column."""
+
+    type: Literal["table"]
+    columns: list[AskColumn] = Field(min_length=1)
+    rows: list[list[str]] = Field(description="One list per row, with one value for each column, in column order")
+
+    @model_validator(mode="after")
+    def rows_match_columns(self) -> "AskTable":
+        if any(len(row) != len(self.columns) for row in self.rows):
+            raise ValueError("every row needs exactly one value for each column")
+        return self
+
+
+class AskFigure(BaseModel):
+    label: str
+    value: str
+
+
+class AskFigures(BaseModel):
+    """A few headline figures, each with a short label."""
+
+    type: Literal["figures"]
+    items: list[AskFigure] = Field(min_length=1)
+
+
+class AskSeries(BaseModel):
+    label: str
+    values: list[float] = Field(description="One value for each point along the bottom, in order")
+
+
+class AskChart(BaseModel):
+    """A line or bar chart: one or more series of numbers over the same ordered points."""
+
+    type: Literal["chart"]
+    kind: Literal["line", "bar"]
+    title: str
+    unit: Literal["money", "number", "percent"] = Field(description="What the values are, which decides how they are written")
+    points: list[str] = Field(min_length=2, description="The labels along the bottom, such as months, in order")
+    series: list[AskSeries] = Field(min_length=1, max_length=3)
+
+    @model_validator(mode="after")
+    def series_match_points(self) -> "AskChart":
+        if any(len(series.values) != len(self.points) for series in self.series):
+            raise ValueError("every series needs exactly one value for each point")
+        return self
+
+
+AskBlock = AskText | AskTable | AskFigures | AskChart
+
+
+class AskReply(BaseModel):
+    """What the model must hand back: an ordered list of blocks from the fixed set
+    above. It cannot return anything else, so it cannot invent a layout."""
+
+    blocks: list[AskBlock] = Field(min_length=1)
+
+
+class AskAnswer(BaseModel):
+    """What the assistant produced for one question."""
+
+    answer: str = Field(description="The whole answer as plain text")
+    blocks: list[AskBlock] = Field(description="The same answer as the blocks it is shown in")
+    sources: list[AskSource] = Field(description="The records the answer rests on")
+    steps: list[AskStep] = Field(description="Each tool the assistant used, in order, with its inputs")
+    worked_out: list[str] = Field(
+        description="Dollar figures in the answer that no tool returned: sums or differences the assistant calculated"
+    )
+    as_of: date
+
+
+class AskResponse(BaseModel):
+    """A saved exchange: the question, its answer, and when it was asked."""
+
+    answer: str = Field(description="The whole answer as plain text")
+    spec: dict = Field(
+        description="The answer laid out for display: a json-render spec whose elements are Answer, Text, Table, Figures and Chart"
+    )
+    sources: list[AskSource]
+    steps: list[AskStep]
+    worked_out: list[str]
+    as_of: date
+    id: int
+    question: str
+    asked_by: str
+    created_at: datetime

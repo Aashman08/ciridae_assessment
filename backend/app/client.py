@@ -10,13 +10,21 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import and_, exists, func, select, text
+from sqlalchemy import and_, delete, exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app import database
+import logging
+
+from agents.exceptions import AgentsException
+from openai import APIStatusError, AuthenticationError, OpenAIError, RateLimitError
+
+from app import assistant, database
 from app.connector import Connector, ExportConnector
 from app.errors import (
+    AskFailedError,
+    AskNotConfiguredError,
+    AskProviderError,
     InvalidRequestError,
     IssueNotFoundError,
     IssueTypeNotFoundError,
@@ -29,6 +37,8 @@ from app.financials import CostBasis, RevenueBasis, compute_financials, latest_r
 from app.issues import UNSENT_STATUSES, apply_action, find_issues
 from app.landing import land
 from app.models import (
+    AskExchange,
+    Company,
     Issue,
     IssueEvidence,
     IssueType,
@@ -41,7 +51,12 @@ from app.models import (
 )
 from app.normalize import normalize
 from app.schemas import (
+    AskMessage,
+    AskRequest,
+    AskResponse,
     CashSummary,
+    CustomerBalance,
+    MonthTotal,
     ContractToCash,
     IssueAction,
     IssueDetailResponse,
@@ -62,6 +77,7 @@ from app.schemas import (
     SyncRunResponse,
 )
 from app.serializers import (
+    ask_response,
     issue_detail_response,
     issue_response,
     issue_type_response,
@@ -69,6 +85,11 @@ from app.serializers import (
     job_summary_response,
     line_response,
 )
+
+logger = logging.getLogger(__name__)
+
+# How many earlier exchanges the model is shown, so a follow-up question makes sense.
+ASK_MEMORY = 6
 
 ACTIVE = ("open", "assigned")
 ZERO = Decimal(0)
@@ -82,6 +103,12 @@ def owned_by(owner: str):
         JobOwner.role == "ops_manager",
         func.lower(JobOwner.name) == owner.lower(),
     )
+
+
+def _provider_message(error: APIStatusError) -> str:
+    """The provider's own explanation, without its error-code wrapper."""
+    body = error.body if isinstance(error.body, dict) else {}
+    return str(body.get("message") or "Try again shortly.")
 
 
 def total_of(column, where=None):
@@ -384,6 +411,110 @@ class ReconClient:
         await self.db.commit()
         found = await self._found_by_type(key)
         return issue_type_response(issue_type, *found.get(key, (0, ZERO)))
+
+    # --- Customers ---------------------------------------------------------------
+
+    async def list_customer_balances(self, owner: str | None = None, limit: int = 10) -> list[CustomerBalance]:
+        """What each customer owes and how much of it is past due, largest first."""
+        run = await self._current_run()
+        open_amount = MoneyLine.amount - MoneyLine.paid_amount
+        late = and_(MoneyLine.status == "SENT", open_amount > 0, MoneyLine.due_date < run.as_of)
+        owed = total_of(open_amount)
+        where = [MoneyLine.kind == INVOICE]
+        if owner:
+            where.append(MoneyLine.job_id.in_(select(Job.id).where(owned_by(owner))))
+        rows = await self.db.execute(
+            select(
+                Company.name.label("customer"),
+                func.count().filter(open_amount > 0).label("open_invoice_count"),
+                owed.label("owed"),
+                total_of(open_amount, late).label("past_due"),
+            )
+            .join(Company, Company.id == MoneyLine.company_id)
+            .where(*where)
+            .group_by(Company.id)
+            .having(owed > 0)
+            .order_by(owed.desc(), Company.name)
+            .limit(limit)
+        )
+        return [CustomerBalance(**row._mapping) for row in rows]
+
+    async def list_month_totals(self, kind: str, owner: str | None = None) -> list[MonthTotal]:
+        """Customer invoices or vendor bills totalled by the calendar month they are dated, oldest first."""
+        await self._current_run()
+        month = func.to_char(MoneyLine.line_date, "YYYY-MM")
+        where = [MoneyLine.kind == kind, MoneyLine.line_date.is_not(None)]
+        if owner:
+            where.append(MoneyLine.job_id.in_(select(Job.id).where(owned_by(owner))))
+        rows = await self.db.execute(
+            select(
+                month.label("month"),
+                func.count().label("count"),
+                total_of(MoneyLine.amount).label("amount"),
+                total_of(MoneyLine.paid_amount).label("paid"),
+                total_of(MoneyLine.amount - MoneyLine.paid_amount).label("unpaid"),
+                total_of(MoneyLine.amount, and_(MoneyLine.kind == INVOICE, MoneyLine.status == "SENT")).label("sent"),
+            )
+            .where(*where)
+            .group_by(month)
+            .order_by(month)
+        )
+        return [MonthTotal(**row._mapping) for row in rows]
+
+    # --- Ask ---------------------------------------------------------------------
+
+    async def ask(self, payload: AskRequest) -> AskResponse:
+        """Answer a question in plain words, using only the fixed tools in `assistant`,
+        and save the exchange so the conversation is still there later."""
+        if not assistant.is_configured():
+            raise AskNotConfiguredError()
+        run = await self._current_run()
+        history = await self._recent_conversation(payload.asked_by)
+        try:
+            answer = await assistant.answer(self, payload, run.as_of, history)
+        except AuthenticationError as exc:
+            logger.warning("Ask: OpenAI rejected the API key request_id=%s", self.request_id)
+            raise AskProviderError("OpenAI rejected the API key. Check OPENAI_API_KEY in backend/.env.") from exc
+        except RateLimitError as exc:
+            # Covers both "slow down" and "this account has no credits". OpenAI's own
+            # sentence says which, and is safe to show.
+            logger.warning("Ask: OpenAI refused the request request_id=%s: %s", self.request_id, exc)
+            raise AskProviderError(f"OpenAI refused the request. {_provider_message(exc)}") from exc
+        except (AgentsException, OpenAIError) as exc:
+            # The model ran out of turns, or the provider failed part-way.
+            logger.warning("Ask failed request_id=%s: %s: %s", self.request_id, type(exc).__name__, exc)
+            raise AskFailedError() from exc
+
+        # Only a finished answer is kept. A failed question leaves no trace in the conversation.
+        exchange = AskExchange(
+            asked_by=payload.asked_by,
+            owner=payload.owner,
+            question=payload.question,
+            **answer.model_dump(mode="json", exclude={"as_of"}),
+            as_of=answer.as_of,
+        )
+        self.db.add(exchange)
+        await self.db.commit()
+        return ask_response(exchange)
+
+    async def list_ask_history(self, asked_by: str, limit: int = 50) -> list[AskResponse]:
+        """One person's conversation, oldest first, ending with the most recent exchange."""
+        latest = await self.db.scalars(
+            select(AskExchange).where(AskExchange.asked_by == asked_by).order_by(AskExchange.id.desc()).limit(limit)
+        )
+        return [ask_response(e) for e in reversed(latest.all())]
+
+    async def clear_ask_history(self, asked_by: str) -> None:
+        await self.db.execute(delete(AskExchange).where(AskExchange.asked_by == asked_by))
+        await self.db.commit()
+
+    async def _recent_conversation(self, asked_by: str) -> list[AskMessage]:
+        """The last few exchanges, as the model needs them to follow "and the second one?"."""
+        messages: list[AskMessage] = []
+        for exchange in await self.list_ask_history(asked_by, limit=ASK_MEMORY):
+            messages.append(AskMessage(role="user", content=exchange.question))
+            messages.append(AskMessage(role="assistant", content=exchange.answer))
+        return messages
 
     # --- Source records ----------------------------------------------------------
 

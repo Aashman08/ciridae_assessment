@@ -60,5 +60,25 @@ class SourceRecordNotFoundError(NotFoundError):
         super().__init__(f"No source record found with id {record_id}.")
 
 
+class AskNotConfiguredError(APIError):
+    status_code = 503
+    error_type = "ask_not_configured"
+    message = "Ask is not set up. Add OPENAI_API_KEY to backend/.env and restart the API."
+
+
+class AskProviderError(APIError):
+    """The model provider refused the request: a rejected key, no credits, or a rate limit."""
+
+    status_code = 503
+    error_type = "ask_provider_refused"
+    message = "OpenAI refused the request. Check the API key and that its account has credits."
+
+
+class AskFailedError(APIError):
+    status_code = 502
+    error_type = "ask_failed"
+    message = "The question could not be answered. Try again, or ask it another way."
+
+
 class NoSyncYetError(InvalidStateError):
     message = "No sync has finished yet. POST /api/v1/sync-runs to run one."

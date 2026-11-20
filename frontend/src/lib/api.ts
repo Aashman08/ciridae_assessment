@@ -1,3 +1,4 @@
+import type { Spec } from '@json-render/core'
 // Everything the app knows about the backend lives here: the shapes it returns
 // and the one function that calls it.
 
@@ -173,6 +174,36 @@ export interface Summary {
   issues_by_type: { type_key: string; title: string; severity: string; count: number; amount: Money }[]
 }
 
+export interface AskSource {
+  kind: 'job' | 'issue' | 'invoice' | 'vendor_bill'
+  /** Job number for a job, invoice or bill; issue id for an issue. */
+  id: string
+  label: string
+}
+
+/** One fixed lookup the assistant ran, with the inputs it chose. */
+export interface AskStep {
+  tool: string
+  arguments: Record<string, unknown>
+}
+
+/** One saved exchange: a question, its answer, and what the answer rests on. */
+export interface AskResponse {
+  id: number
+  question: string
+  asked_by: string
+  created_at: string
+  /** The whole answer as plain text. */
+  answer: string
+  /** The answer laid out for display: text, tables and figures, drawn by `AnswerView`. */
+  spec: Spec
+  sources: AskSource[]
+  steps: AskStep[]
+  /** Dollar figures in the answer that no lookup returned: the assistant calculated them. */
+  worked_out: string[]
+  as_of: string
+}
+
 export interface SourceRecord {
   id: number
   system: string
@@ -216,6 +247,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new ApiError(0, 'unreachable', 'The reconciliation service is not responding. Check that it is running.', '')
   }
+  // A delete answers with no body.
+  if (response.status === 204) return undefined as T
   if (response.ok) return response.json() as Promise<T>
 
   const requestId = response.headers.get('X-Request-ID') ?? ''
@@ -256,6 +289,10 @@ export const api = {
 
   latestSync: () => request<ListResponse<SyncRun>>('/sync-runs?limit=1'),
   runSync: () => post<SyncRun>('/sync-runs'),
+
+  ask: (body: { question: string; asked_by: string; owner?: string }) => post<AskResponse>('/ask', body),
+  askHistory: (askedBy: string) => request<AskResponse[]>(`/ask/history${query({ asked_by: askedBy })}`),
+  clearAskHistory: (askedBy: string) => request<void>(`/ask/history${query({ asked_by: askedBy })}`, { method: 'DELETE' }),
 
   sourceRecord: (id: number) => request<SourceRecord>(`/source-records/${id}`),
 }

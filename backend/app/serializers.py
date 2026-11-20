@@ -11,8 +11,9 @@ from app.financials import (
     profit,
     revenue_for,
 )
-from app.models import Issue, IssueType, Job, JobFinancials, MoneyLine
+from app.models import AskExchange, Issue, IssueType, Job, JobFinancials, MoneyLine
 from app.schemas import (
+    AskResponse,
     EventResponse,
     FigureOption,
     IssueDetailResponse,
@@ -171,4 +172,35 @@ def job_detail_response(
         issues=[issue_response(i) for i in sorted(issues, key=lambda i: i.amount, reverse=True)],
         invoices=[line_response(l) for l in lines if l.kind == "customer_invoice"],
         vendor_bills=[line_response(l) for l in lines if l.kind == "vendor_bill"],
+    )
+
+
+def answer_spec(blocks: list[dict], answer: str) -> dict:
+    """An answer laid out for display, in the shape json-render reads: a root
+    element and a flat map of elements. The element types are the fixed set the
+    web app knows how to draw (Answer, Text, Table, Figures, Chart) and nothing else."""
+    if not blocks:
+        # Saved before answers had blocks. Show the text as it was written.
+        blocks = [{"type": "text", "text": answer}]
+    types = {"text": "Text", "table": "Table", "figures": "Figures", "chart": "Chart"}
+    elements: dict[str, dict] = {}
+    for index, block in enumerate(blocks, start=1):
+        props = {key: value for key, value in block.items() if key != "type"}
+        elements[f"block-{index}"] = {"type": types[block["type"]], "props": props, "children": []}
+    elements["answer"] = {"type": "Answer", "props": {}, "children": [key for key in elements]}
+    return {"root": "answer", "elements": elements}
+
+
+def ask_response(exchange: AskExchange) -> AskResponse:
+    return AskResponse(
+        id=exchange.id,
+        question=exchange.question,
+        asked_by=exchange.asked_by,
+        created_at=exchange.created_at,
+        answer=exchange.answer,
+        spec=answer_spec(exchange.blocks, exchange.answer),
+        sources=exchange.sources,
+        steps=exchange.steps,
+        worked_out=exchange.worked_out,
+        as_of=exchange.as_of,
     )

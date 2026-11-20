@@ -18,6 +18,10 @@ SOURCE_DB = "harborstone_test"
 os.environ["DATABASE_URL"] = f"postgresql+psycopg:///{RECON_DB}"
 os.environ["SOURCE_DATABASE_URL"] = f"postgresql+psycopg:///{SOURCE_DB}"
 os.environ.pop("API_KEY", None)
+# Tests never use a real model key, even when backend/.env has one. An empty
+# value here overrides the file, so no test can reach the network or spend money.
+os.environ["OPENAI_API_KEY"] = ""
+os.environ["ASK_MODEL"] = ""
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
@@ -34,7 +38,7 @@ DUMP = Path(__file__).resolve().parents[2] / "source_data.sql"
 OUR_TABLES = (
     "raw.source_record, recon.sync_run, recon.company, recon.job, recon.job_owner, "
     "recon.cost_code_map, recon.money_line, recon.job_financials, recon.issue_type, "
-    "recon.issue, recon.issue_evidence, recon.issue_event"
+    "recon.issue, recon.issue_evidence, recon.issue_event, recon.ask_exchange"
 )
 
 

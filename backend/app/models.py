@@ -308,6 +308,29 @@ class IssueEvent(Base):
     issue: Mapped[Issue] = relationship(back_populates="events", lazy="raise")
 
 
+
+class AskExchange(Base):
+    """One question someone asked and the answer they got, kept so a conversation
+    is still there when they come back to it."""
+
+    __tablename__ = "ask_exchange"
+    __table_args__ = {"schema": RECON}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    asked_by: Mapped[str] = mapped_column(String(120), index=True)
+    # Set when the person only sees their own jobs. The answer was limited to them.
+    owner: Mapped[str | None] = mapped_column(String(120))
+    question: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text)
+    # The answer as the blocks it is shown in. Empty for answers saved before blocks existed.
+    blocks: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    sources: Mapped[list] = mapped_column(JSONB, default=list)
+    steps: Mapped[list] = mapped_column(JSONB, default=list)
+    worked_out: Mapped[list] = mapped_column(JSONB, default=list)
+    as_of: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 # How many notes people have left on an issue. Counted by the database as part
 # of every issue read, so a list can show it without loading the history.
 Issue.note_count = column_property(
