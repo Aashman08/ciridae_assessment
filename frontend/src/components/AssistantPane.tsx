@@ -3,10 +3,11 @@ import { Check, Copy, RotateCcw, SendHorizontal, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
-import type { Coding, Draft, Issue } from '../lib/api'
+import type { Coding, Draft, Item } from '../lib/api'
 import { suggestionsFor, useAssistant, usePage } from '../lib/assistant'
 import { useConversation } from '../lib/conversation'
 import { money } from '../lib/format'
+import { FOLLOW_UP_WORKING_DAYS } from '../lib/items'
 import { composeUrl, useMailApp } from '../lib/mail'
 import { useViewer } from '../lib/viewer'
 import { Composer, Messages, Working } from './Conversation'
@@ -52,21 +53,19 @@ function Chat() {
   )
 }
 
-/** The issue a draft or a suggestion is about, so the pane makes sense on its own. */
-function About({ issue }: { issue: Issue }) {
+/** What a draft or a suggestion is about, so the pane makes sense on its own. */
+function About({ item }: { item: Item }) {
   return (
     <p className="text-[0.8125rem] text-ink-2">
-      <Link to={`/issues/${issue.id}`} className="text-ink hover:underline">
-        {issue.title}
-      </Link>
-      {issue.document && <span className="font-mono text-xs"> {issue.document}</span>}
-      {Number(issue.amount) > 0 && <span className="font-mono text-xs"> {money(issue.amount)}</span>}
+      <span className="text-ink">{item.title}</span>
+      {item.document && <span className="font-mono text-xs"> {item.document}</span>}
+      {Number(item.amount) > 0 && <span className="font-mono text-xs"> {money(item.amount)}</span>}
     </p>
   )
 }
 
 /** The message as it came back, in the fields a person can change before sending. */
-function Compose({ issue, message, onAgain }: { issue: Issue; message: Draft; onAgain: () => void }) {
+function Compose({ item, message, onAgain }: { item: Item; message: Draft; onAgain: () => void }) {
   const { viewer } = useViewer()
   const client = useQueryClient()
   const [mail] = useMailApp()
@@ -78,10 +77,12 @@ function Compose({ issue, message, onAgain }: { issue: Issue; message: Draft; on
 
   const logged = useMutation({
     mutationFn: () =>
-      api.actOnIssue(issue.id, {
+      // Logging it also sets the date to come back if nothing has been heard.
+      api.actOnItem(item.key, {
         action: 'update',
         actor: viewer.name,
-        note: `Sent a follow-up to ${message.recipient.name}: ${subject}`,
+        note: `Sent a message to ${message.recipient.name}: ${subject}`,
+        follow_up_in_working_days: FOLLOW_UP_WORKING_DAYS,
       }),
     onSuccess: () => client.invalidateQueries({ predicate: (query) => query.queryKey[0] !== 'draft' }),
   })
@@ -160,9 +161,9 @@ function Compose({ issue, message, onAgain }: { issue: Issue; message: Draft; on
 
       <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-[0.8125rem]">
         <dt className="text-ink-2">Written to</dt>
-        <dd>
-          {message.recipient.name}, {message.recipient.role.charAt(0).toLowerCase() + message.recipient.role.slice(1)}
-        </dd>
+        <dd>{message.recipient.name}</dd>
+        <dt className="text-ink-2">Why them</dt>
+        <dd>{message.recipient.role}</dd>
         <dt className="text-ink-2">Sends with</dt>
         <dd className="flex flex-wrap items-center gap-x-2">
           {mail.logo && <img src={mail.logo} alt="" className="size-4 object-contain" />}
@@ -187,10 +188,10 @@ function Compose({ issue, message, onAgain }: { issue: Issue; message: Draft; on
       {opened && (
         <div className="flex flex-col items-start gap-2 rounded-xl border border-hair bg-card p-4 text-[0.8125rem]">
           <p>
-            The message is open in {mail.name}, ready to send. Once it has gone, log it so the issue shows what was done
+            The message is open in {mail.name}, ready to send. Once it has gone, log it. That records it and sets a follow-up in five working days
           </p>
           <Button disabled={logged.isPending || logged.isSuccess} onClick={() => logged.mutate()}>
-            {logged.isSuccess ? 'Logged on the issue' : logged.isPending ? 'Logging' : 'Log that I sent it'}
+            {logged.isSuccess ? 'Logged' : logged.isPending ? 'Logging' : 'Log that I sent it'}
           </Button>
           {logged.isError && <p className="text-neg">{logged.error.message}</p>}
         </div>
@@ -198,19 +199,19 @@ function Compose({ issue, message, onAgain }: { issue: Issue; message: Draft; on
 
       <p className="text-xs leading-4 text-muted">
         Send opens this message in {mail.name} for you to send from your own address. Every figure in the draft was checked
-        against the records for this issue as of the last sync
+        against the records as of the last sync
       </p>
     </>
   )
 }
 
 /** A drafted follow-up, shown as a message ready to send. The person sends it from their own email. */
-function DraftPreview({ issue }: { issue: Issue }) {
+function DraftPreview({ item }: { item: Item }) {
   const { viewer } = useViewer()
 
   const draft = useQuery({
-    queryKey: ['draft', issue.id, viewer.name],
-    queryFn: () => api.draftFollowUp(issue.id, viewer.name),
+    queryKey: ['draft', item.key, viewer.name],
+    queryFn: () => api.draftForItem(item.key, viewer.name),
     // A draft is kept for the visit. A new one is written only when asked for.
     staleTime: Infinity,
     gcTime: Infinity,
@@ -219,14 +220,14 @@ function DraftPreview({ issue }: { issue: Issue }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
       <div className="flex flex-col gap-4">
-        <About issue={issue} />
+        <About item={item} />
         {draft.isFetching ? (
           <Working label="Writing a draft from the records" />
         ) : draft.isError ? (
           <ErrorNote error={draft.error} />
         ) : draft.data ? (
           // Keyed on when it was written, so a new draft replaces any edits to the old one.
-          <Compose key={draft.dataUpdatedAt} issue={issue} message={draft.data} onAgain={() => draft.refetch()} />
+          <Compose key={draft.dataUpdatedAt} item={item} message={draft.data} onAgain={() => draft.refetch()} />
         ) : null}
       </div>
     </div>
@@ -243,17 +244,17 @@ const LOOKUPS: Record<string, string> = {
 }
 
 /** The agent's suggestion for an unassigned bill. A person accepts or rejects it. */
-function CodingSuggestion({ issue }: { issue: Issue }) {
+function CodingSuggestion({ item }: { item: Item }) {
   const { viewer } = useViewer()
   const client = useQueryClient()
   const { close } = useAssistant()
 
   const suggestion = useQuery({
-    queryKey: ['coding', issue.id],
+    queryKey: ['coding', item.key],
     queryFn: async () => {
-      const result = await api.suggestJob(issue.id)
-      // The suggestion is written into the issue's history, so that needs reading again.
-      void client.invalidateQueries({ queryKey: ['issue', issue.id] })
+      const result = await api.suggestJob(item.issue_ids[0])
+      // The suggestion is written into the bill's history, so the lists need reading again.
+      void client.invalidateQueries({ queryKey: ['items'] })
       return result
     },
     staleTime: Infinity,
@@ -263,7 +264,7 @@ function CodingSuggestion({ issue }: { issue: Issue }) {
   const decide = useMutation({
     mutationFn: ({ accept, result }: { accept: boolean; result: Coding }) => {
       const what = result.decision === 'job' ? `job ${result.job_number} (${result.job_name})` : 'not a job cost'
-      return api.actOnIssue(issue.id, {
+      return api.actOnItem(item.key, {
         action: accept ? 'resolve' : 'update',
         actor: viewer.name,
         note: accept
@@ -280,7 +281,7 @@ function CodingSuggestion({ issue }: { issue: Issue }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
       <div className="flex flex-col gap-4">
-        <About issue={issue} />
+        <About item={item} />
         {suggestion.isFetching ? (
           <Working label="Reading the bill and comparing it with the jobs" />
         ) : suggestion.isError ? (
@@ -377,8 +378,8 @@ function CodingSuggestion({ issue }: { issue: Issue }) {
             {decide.isError && <p className="text-[0.8125rem] text-neg">{decide.error.message}</p>}
             <p className="text-xs leading-4 text-muted">
               {suggestion.data.decision === 'unsure'
-                ? 'The assistant would not guess. Use Log update on the issue once you know where the bill belongs'
-                : 'Accepting records your decision and resolves the issue. The bill itself is only changed in accounting'}
+                ? 'The assistant would not guess. Use Log update once you know where the bill belongs'
+                : 'Accepting records your decision and closes this. The bill itself is only changed in accounting'}
             </p>
           </>
         ) : null}
@@ -409,9 +410,9 @@ export function AssistantPane() {
         </button>
       </header>
       {view.kind === 'chat' && <Chat />}
-      {/* Keyed on the issue so each one gets its own draft or suggestion. */}
-      {view.kind === 'draft' && <DraftPreview key={view.issue.id} issue={view.issue} />}
-      {view.kind === 'coding' && <CodingSuggestion key={view.issue.id} issue={view.issue} />}
+      {/* Keyed on the item so each one gets its own draft or suggestion. */}
+      {view.kind === 'draft' && <DraftPreview key={view.item.key} item={view.item} />}
+      {view.kind === 'coding' && <CodingSuggestion key={view.item.key} item={view.item} />}
     </aside>
   )
 }

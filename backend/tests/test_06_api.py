@@ -360,6 +360,7 @@ async def test_openapi_describes_every_route(api):
         "/health", "/api/v1/ask", "/api/v1/ask/history", "/api/v1/customer-balances", "/api/v1/sync-runs", "/api/v1/sync-runs/{run_id}", "/api/v1/summary", "/api/v1/jobs",
         "/api/v1/jobs/{job_number}", "/api/v1/jobs/{job_number}/lines", "/api/v1/lines", "/api/v1/issues",
         "/api/v1/issues/{issue_id}", "/api/v1/issues/{issue_id}/actions", "/api/v1/issues/{issue_id}/draft", "/api/v1/issues/{issue_id}/coding", "/api/v1/issue-types", "/api/v1/people", "/api/v1/sources",
+        "/api/v1/items", "/api/v1/items/{key}/actions", "/api/v1/items/{key}/draft", "/api/v1/jobs/{job_number}/review",
         "/api/v1/issue-types/{key}", "/api/v1/source-records/{record_id}",
     } == set(paths)
 

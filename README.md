@@ -100,10 +100,10 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 | Screen | What it is for |
 | --- | --- |
 | Ask | Type a question in plain words. The answer comes with the records it rests on and the lookups that produced it. **Ask AI** in the top bar opens the same conversation beside any page, and it knows which job, issue or list is open |
-| Overview | Finance sees cash owed, invoices not sent, unpaid bills, contract-to-cash totals and issues by type. An ops manager sees their own to-do list, largest first |
-| Jobs | Every job with its revenue, both cost figures, profit, margin and planned margin. Search by job, number or customer, and sort by any heading |
+| Overview | Finance sees cash owed, invoices not sent, unpaid bills, the contract value split by where the money is, and what each check found. An ops manager sees their own to-do list, largest first, each row with a button that starts its next step |
+| Jobs | Every job with its revenue, cost, profit and margin. Search by job, number or customer, and sort by any heading. A job's page holds everything about it, including **What needs doing**: the thing to do first, and every item with its next step |
 | Job | Revenue and cost figures side by side. Pick one of each and the profit and margin for that pair appear beside them |
-| Issues | The work queue, with severity, days late, owner and follow-up date; filter by status, severity, type and owner, and sort by any heading. **Log update** on a row records what someone has done, hands the issue to someone else, or sets a date to come back to it. It never contacts anyone or changes an invoice or bill. Saving keeps the issue open; resolving is a separate choice |
+| Issues | One row per job, with tags for what is wrong and the money flagged, counted once. Opening a row lists each thing to fix on that job. Several checks on one invoice or bill are one item with tags. Each item has a button that starts its next step: a drafted message, a suggested job for a bill, an assignment, a date to wait until, or a dismissal. Bills on no job are a group of their own |
 | Issue | What is wrong, what to do, the records behind it and the untouched source row for each, plus its history |
 | Customer invoices, Vendor bills | Every invoice and bill across jobs |
 | Connectors | The three source systems with how much of each was read and when, and the email account a follow-up is sent with |
@@ -165,6 +165,10 @@ such as `"246300.00"`. Errors always look like
 | GET | `/lines?kind=` | Invoices or vendor bills across jobs. Filter with `status`, `no_job` and `balance` (`open` or `past_due`) |
 | GET | `/issues` | The work queue, largest first. Filter by `type`, `owner`, `status`, `severity`, `job`; order with `sort` (`amount`, `severity`, `due`, `follow_up`, `owner`) and `order`. Each issue says why its owner has it (`owner_role`), how late it is (`days_late`) and how many other issues are about the same document (`same_document`) |
 | GET | `/issues/{id}` | One issue with its evidence and history |
+| GET | `/items` | What needs fixing, grouped by job: one item per invoice, bill or gap, with tags, its next step and its history. Filter by `state`, `owner`, `type` |
+| POST | `/items/{key}/actions` | `update`, `resolve`, `dismiss` or `reopen` an item. It applies to every check behind it |
+| POST | `/items/{key}/draft` | Draft the message that fixing an item starts with |
+| POST | `/jobs/{number}/review` | Have the assistant review a job's items |
 | POST | `/issues/{id}/draft` | Draft a follow-up message for a person to send themselves. Returns the recipient, subject, body and anything to check |
 | POST | `/issues/{id}/coding` | Suggest which job an unassigned vendor bill belongs to, with confidence and reasons |
 | POST | `/issues/{id}/actions` | `update` saves any of a note, a new owner and a follow-up date together; `resolve` and `reopen` change its status |
@@ -177,12 +181,13 @@ such as `"246300.00"`. Errors always look like
 | PATCH | `/issue-types/{key}` | Switch a check off or change its tolerance |
 | GET | `/source-records/{id}` | The untouched source row behind any number |
 
-## Three places the model does work
+## Four places the model does work
 
 | Where | What the model does | What stays fixed |
 |---|---|---|
 | **Ask** (`assistant.py`) | Chooses which fixed lookups to run and writes the answer as text, tables, figures and charts | Every figure comes from a lookup. The page it was asked from only names a job or issue; the tools decide what the person may see |
 | **Bill coding** (`coding.py`) | Works out which job an unassigned vendor bill belongs to, from the bill's lines, the email it arrived on, the vendor's history and what each job is spending on. Says how sure it is, and can answer "not a job cost" or "not sure" | It may only name a job it was shown. A low-confidence job is reported as "not sure". A person accepts or rejects; nothing is written to accounting |
+| **Job review** (`review.py`) | Reads a job's items with their notes and history and says, for each, act now, wait until a date, or dismiss, and which to do first. This is what a rule cannot do: a note saying payment is promised for Friday means chasing today is wrong | Fixed rules in `items.py` already name the work that fixes each kind of item. The model may only choose among act, wait and dismiss; it cannot dismiss an unpaid invoice or bill, name an item that is not on the job, or set a date in the past. Its review is kept until an item changes. A person confirms every step |
 | **Follow-up drafts** (`drafts.py`) | Writes the words of a message about an issue | Who it goes to, their address and every fact it may use are chosen by code. Each dollar figure in the draft is checked against those facts. **Send** opens the message in the person's own Gmail, Outlook or mail app for them to send; the app has no mailbox access and sends nothing itself |
 
 ### How the bill coder is tested
@@ -199,6 +204,24 @@ with high confidence, which is the failure that matters. It calls the model once
 bill (15 bills), so it needs `OPENAI_API_KEY`. The agent never sees a bill's own job in
 any lookup, which a test asserts, so the score is not leaked. Fifteen bills is a small
 set; treat the result as a first check, not a guarantee.
+
+### How the job review is tested
+
+`evals/job_review.py` puts every job with something open to the reviewer and compares
+each decision with the one a person would make from the same notes:
+
+```
+cd backend && uv run python -m evals.job_review
+```
+
+The export holds one real promise: a note in accounting on invoice INV-2026-0502, dated
+24 July, says payment is on the customer's next check run and to follow up Friday. With
+figures as of Tuesday 28 July, the right answer is to wait until Friday 31 July, not to
+chase again. The script reports that case on its own, because reading a note is the one
+thing the fixed rules cannot do. It calls the model once per job (21 jobs).
+
+The date of the last sync is the clock for all of this: how late something is, whether a
+follow-up date has arrived, and what "Friday" in a note means.
 
 ## Ask: where AI is used, and where it is not
 

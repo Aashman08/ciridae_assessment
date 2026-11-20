@@ -18,6 +18,9 @@ Source lives in `backend/app/`:
 - `serializers.py` converts database models into API response models.
 - `connector.py` reads rows from the source systems.
 - `assistant.py` is Ask: the agent, its instructions and its fixed tools.
+- `items.py` groups issues into items, the things a person fixes, and holds the
+  fixed rules for what work fixes each kind. `review.py` is the agent that reviews a
+  job's items. Detection in `issues.py` is untouched; grouping happens on read.
 - `coding.py` is the bill coder and `drafts.py` is the follow-up drafter. Each is one
   agent with a typed reply that our code checks before it is returned.
 - `scheduler.py` runs a sync every `SYNC_EVERY_MINUTES`.
@@ -34,8 +37,8 @@ The web app is React, TypeScript, Vite and Tailwind, in `frontend/src/`:
 - `lib/api.ts` holds every call to the backend and the shapes it returns. Nothing
   else calls `fetch`.
 - `lib/` also holds formatting, the current viewer and sync helpers.
-- `components/` holds the shell, the shared job and issue tables, the resolve
-  dialog and small building blocks in `ui.tsx`.
+- `components/` holds the shell, the shared job and item tables, the update
+  dialog, the assistant pane and small building blocks in `ui.tsx`.
 - `pages/` holds one file per screen.
 - `index.css` holds the design tokens and the one shared table style.
 
@@ -96,6 +99,10 @@ Run from `frontend/`:
   It docks as a third column at 2xl and slides over the page below that.
 - Page layouts inside `main` respond to the width they have (`@[58rem]:` container
   variants), not the window, because the pane can take width away.
+- There is no page for a single issue. Everything about a job, including what needs
+  fixing on it, is on the job's page. An item opens in place under its row.
+- An action can only be something this app really does: draft a message, suggest a
+  job for a bill, reassign, set a date, dismiss or resolve. It never changes a source system.
 - A list table shows only the columns needed to choose a row. Everything else goes on
   the record's own page. Do not add a column that is empty on most rows.
 - Dropdowns use `Select` from `ui.tsx`, never a native `<select>`.

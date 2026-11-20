@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { IssueTable } from '../components/IssueTable'
+import { ItemTable } from '../components/ItemTable'
 import { JobTable } from '../components/JobTable'
 import { Card, CardHead, Loaded, PageHead, Stat } from '../components/ui'
 import { api } from '../lib/api'
@@ -29,7 +29,7 @@ function IssuesByType({ summary }: { summary: Summary }) {
 
   return (
     <Card>
-      <CardHead title="Issues by type">
+      <CardHead title="What each check found">
         <Link to="/issues" className={buttonClass()}>
           All issues
         </Link>
@@ -194,8 +194,8 @@ function CompanyOverview({ summary }: { summary: Summary }) {
           note={`${plural(cash.vendor_bills_count, 'bill')}, none in the ledger`}
         />
         <Stat
-          label="Open issues"
-          value={summary.open_issue_count}
+          label="To fix"
+          value={summary.open_item_count}
           note={`on ${summary.jobs_with_issues} of ${plural(summary.job_count, 'job')}`}
         />
       </div>
@@ -219,7 +219,15 @@ function CompanyOverview({ summary }: { summary: Summary }) {
 /** An ops manager's view: what is stuck on their own jobs, largest first. */
 function MyOverview({ summary, owner }: { summary: Summary; owner: string }) {
   const { cash } = summary
-  const todo = useQuery({ queryKey: ['issues', owner, 'todo'], queryFn: () => api.issues({ owner, limit: 100 }) })
+  // Everything open on this person's jobs as one list: what needs action first, then the largest.
+  const todo = useQuery({
+    queryKey: ['items', 'open', owner, ''],
+    queryFn: () => api.items({ state: 'open', owner }),
+    select: (found) =>
+      found.groups
+        .flatMap((group) => group.items)
+        .sort((a, b) => Number(a.state !== 'needs_action') - Number(b.state !== 'needs_action') || Number(b.amount) - Number(a.amount)),
+  })
   const jobs = useQuery({ queryKey: ['jobs', owner, 'mine'], queryFn: () => api.jobs({ owner, limit: 100 }) })
 
   return (
@@ -234,12 +242,12 @@ function MyOverview({ summary, owner }: { summary: Summary; owner: string }) {
           value={money(cash.vendor_bills_unpaid)}
           note={`${plural(cash.vendor_bills_count, 'bill')} on my jobs`}
         />
-        <Stat label="Needs me" value={summary.open_issue_count} note={`across ${plural(summary.jobs_with_issues, 'job')}`} />
+        <Stat label="Needs me" value={summary.open_item_count} note={`across ${plural(summary.jobs_with_issues, 'job')}`} />
       </div>
 
       <Card>
         <CardHead title="To do, largest first" />
-        <Loaded query={todo}>{(page) => <IssueTable issues={page.data} showOwner={false} />}</Loaded>
+        <Loaded query={todo}>{(items) => <ItemTable items={items} showJob empty="Nothing on your jobs needs fixing" />}</Loaded>
       </Card>
 
       <Card>

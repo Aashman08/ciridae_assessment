@@ -1,9 +1,9 @@
 import { createContext, useContext } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import type { AskPage, AskSource, Issue } from './api'
+import type { AskPage, AskSource, Item } from './api'
 
 /** What the side pane is showing. It is closed when this is null. */
-export type AssistantView = { kind: 'chat' } | { kind: 'draft'; issue: Issue } | { kind: 'coding'; issue: Issue }
+export type AssistantView = { kind: 'chat' } | { kind: 'draft'; item: Item } | { kind: 'coding'; item: Item }
 
 export const AssistantContext = createContext<{
   view: AssistantView | null
@@ -35,7 +35,6 @@ export function usePage(): { page: AskPage; label: string } {
   const [, first, second] = pathname.split('/')
 
   if (first === 'jobs' && second) return { page: { kind: 'job', job_number: second.toUpperCase() }, label: `Job ${second.toUpperCase()}` }
-  if (first === 'issues' && second && Number(second) > 0) return { page: { kind: 'issue', issue_id: Number(second) }, label: 'This issue' }
 
   const kind = LISTS[first] ?? 'overview'
   const filters: Record<string, string> = {}
@@ -61,9 +60,6 @@ export function usePage(): { page: AskPage; label: string } {
 export function suggestionsFor(page: AskPage, ownJobsOnly: boolean): string[] {
   if (page.kind === 'job') {
     return ['What is wrong with this job?', 'What did this job make, by ledger cost and by ops log cost?', 'What is still owed on this job?']
-  }
-  if (page.kind === 'issue') {
-    return ['Explain this issue in plain words', 'What else is open on the same job?', 'What has been done about this so far?']
   }
   if (page.kind === 'invoices') return ['Which invoices are most overdue?', 'Chart invoicing by month', 'Which customers owe the most?']
   if (page.kind === 'bills') return ['Which bills have no job?', 'Which bills are waiting on approval?', 'Chart vendor bills by month']

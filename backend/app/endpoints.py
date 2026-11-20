@@ -20,6 +20,11 @@ from app.schemas import (
     DraftRequest,
     DraftResponse,
     IssueTypeResponse,
+    ItemActionRequest,
+    ItemFilters,
+    ItemResponse,
+    ItemsResponse,
+    JobItems,
     SourceSystem,
     PersonResponse,
     IssueTypeUpdate,
@@ -270,6 +275,53 @@ async def suggest_job_for_issue(issue_id: int, request: Request) -> CodingRespon
 async def list_sources(request: Request) -> list[SourceSystem]:
     async with create_recon_client(request.state.request_id) as client:
         return await client.list_sources()
+
+
+@router.get(
+    "/items",
+    tags=["Items"],
+    summary="What needs fixing, grouped by job",
+    response_model=ItemsResponse,
+)
+async def list_items(filters: Annotated[ItemFilters, Query()], request: Request) -> ItemsResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.list_items(filters)
+
+
+@router.post(
+    "/items/{key}/actions",
+    tags=["Items"],
+    summary="Update, resolve, dismiss or reopen an item, and every check behind it",
+    response_model=ItemResponse,
+    responses={400: ERROR_400, 404: ERROR_404, 409: ERROR_409},
+)
+async def act_on_item(key: str, payload: ItemActionRequest, request: Request) -> ItemResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.act_on_item(key, payload)
+
+
+@router.post(
+    "/items/{key}/draft",
+    tags=["Items"],
+    summary="Draft the message that fixing an item starts with. Nothing is sent",
+    response_model=DraftResponse,
+    responses={400: ERROR_400, 404: ERROR_404, 409: ERROR_409},
+)
+async def draft_for_item(key: str, payload: DraftRequest, request: Request) -> DraftResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.draft_for_item(key, payload)
+
+
+@router.post(
+    "/jobs/{job_number}/review",
+    tags=["Items"],
+    summary="Have the assistant review a job's items: act, wait or dismiss, and which first",
+    response_model=JobItems,
+    responses={404: ERROR_404, 409: ERROR_409},
+)
+async def review_job(job_number: str, request: Request) -> JobItems:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.review_job(job_number)
 
 
 @router.get("/people", tags=["Issues"], summary="Who an issue can be assigned to", response_model=list[PersonResponse])

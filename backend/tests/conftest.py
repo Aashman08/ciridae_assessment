@@ -40,7 +40,7 @@ DUMP = Path(__file__).resolve().parents[2] / "source_data.sql"
 OUR_TABLES = (
     "raw.source_record, recon.sync_run, recon.company, recon.job, recon.job_owner, "
     "recon.cost_code_map, recon.money_line, recon.job_financials, recon.issue_type, "
-    "recon.issue, recon.issue_evidence, recon.issue_event, recon.ask_exchange"
+    "recon.issue, recon.issue_evidence, recon.issue_event, recon.ask_exchange, recon.job_review"
 )
 
 

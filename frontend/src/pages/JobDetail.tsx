@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { IssueTable } from '../components/IssueTable'
+import { NextSteps } from '../components/NextSteps'
 import { Card, CardHead, Empty, Facts, Loaded, PageHead } from '../components/ui'
 import { api } from '../lib/api'
 import type { CostBasis, FigureOption, JobDetail as Job, Line, RevenueBasis } from '../lib/api'
@@ -206,10 +206,7 @@ export function JobDetail() {
 
           <SystemFacts job={data} />
 
-          <Card>
-            <CardHead title="Issues on this job" />
-            <IssueTable issues={data.issues} showJob={false} showOwner={false} />
-          </Card>
+          <NextSteps jobNumber={data.job_number} items={data.items} />
 
           <div className="grid grid-cols-1 gap-4 @[80rem]:grid-cols-2">
             <Documents title="Customer invoices" lines={data.invoices} empty="No invoices yet" />

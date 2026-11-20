@@ -45,6 +45,11 @@ class IssueNotFoundError(NotFoundError):
         super().__init__(f"No issue found with id {issue_id}.")
 
 
+class ItemNotFoundError(NotFoundError):
+    def __init__(self, key: str) -> None:
+        super().__init__(f"There is nothing to fix called '{key}'.")
+
+
 class IssueTypeNotFoundError(NotFoundError):
     def __init__(self, key: str) -> None:
         super().__init__(f"No issue type found with key '{key}'.")

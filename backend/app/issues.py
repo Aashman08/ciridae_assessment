@@ -508,6 +508,15 @@ async def record_findings(db: AsyncSession, run: SyncRun, findings: list[Finding
                 issue.owner = f.owner
                 db.add(IssueEvent(issue_id=issue.id, kind="reopened", note=f"Found again in sync {run.id}"))
                 stats["reopened"] += 1
+            elif issue.status == "resolved" and issue.dismissed and f.amount != issue.amount:
+                # It was closed as expected at one figure. A different figure is a new question.
+                was, now = money(issue.amount), money(f.amount)
+                issue.status, issue.dismissed, issue.resolution_note = "open", False, None
+                db.add(IssueEvent(
+                    issue_id=issue.id, kind="reopened",
+                    note=f"Dismissed as expected at {was}, but sync {run.id} found {now}",
+                ))
+                stats["reopened"] += 1
             else:
                 stats["unchanged"] += 1
             issue.amount, issue.summary, issue.detail = f.amount, f.summary, f.detail
@@ -590,10 +599,17 @@ async def apply_action(
             raise InvalidStateError(f"The issue is already {issue.status}.")
         issue.status, issue.resolution_note, issue.follow_up_on = "resolved", note, None
         log("resolved", note)
+    elif action == "dismiss":
+        if not note:
+            raise InvalidRequestError("Dismissing needs a note saying why this is expected.")
+        if issue.status in ("resolved", "cleared"):
+            raise InvalidStateError(f"The issue is already {issue.status}.")
+        issue.status, issue.resolution_note, issue.follow_up_on, issue.dismissed = "resolved", f"Expected: {note}", None, True
+        log("dismissed", note)
     elif action == "reopen":
         if issue.status not in ("resolved", "cleared"):
             raise InvalidStateError("Only a resolved or cleared issue can be reopened.")
-        issue.status, issue.resolution_note = "open", None
+        issue.status, issue.resolution_note, issue.dismissed = "open", None, False
         log("reopened", note)
     else:
         raise InvalidRequestError(f"Unknown action '{action}'.")

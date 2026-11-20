@@ -264,6 +264,8 @@ class Issue(Base):
     owner: Mapped[str] = mapped_column(String(120), index=True)
     status: Mapped[str] = mapped_column(String(20), default="open", index=True)  # open | assigned | resolved | cleared
     resolution_note: Mapped[str | None] = mapped_column(Text)
+    # Set when a person closed it as expected, not as fixed. It reopens if the amount later changes.
+    dismissed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # A date someone set to come back to this. Theirs to set and clear; a sync leaves it alone.
     follow_up_on: Mapped[date | None] = mapped_column(Date)
     first_seen_run_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.sync_run.id"))
@@ -301,7 +303,7 @@ class IssueEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     issue_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.issue.id", ondelete="CASCADE"), index=True)
-    # opened | assigned | commented | resolved | reopened | cleared
+    # opened | assigned | follow_up | commented | suggested | resolved | dismissed | reopened | cleared
     kind: Mapped[str] = mapped_column(String(20))
     actor: Mapped[str] = mapped_column(String(120), default="system")
     note: Mapped[str | None] = mapped_column(Text)
@@ -330,6 +332,20 @@ class AskExchange(Base):
     steps: Mapped[list] = mapped_column(JSONB, default=list)
     worked_out: Mapped[list] = mapped_column(JSONB, default=list)
     as_of: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class JobReview(Base):
+    """The assistant's last review of a job's items, kept so it is not asked again
+    until something it rested on changes."""
+
+    __tablename__ = "job_review"
+    __table_args__ = {"schema": RECON}
+
+    job_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.job.id", ondelete="CASCADE"), primary_key=True)
+    # The state of the job's items when it was written. A different value means it is out of date.
+    fingerprint: Mapped[str] = mapped_column(Text)
+    payload: Mapped[dict] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

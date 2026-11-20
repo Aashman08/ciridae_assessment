@@ -21,7 +21,7 @@ import logging
 from agents.exceptions import AgentsException
 from openai import APIStatusError, AuthenticationError, OpenAIError, RateLimitError
 
-from app import assistant, coding, database, drafts
+from app import assistant, coding, database, drafts, review
 from app.coding import CodingCase
 from app.connector import Connector, ExportConnector
 from app.errors import (
@@ -30,6 +30,7 @@ from app.errors import (
     AskProviderError,
     InvalidRequestError,
     InvalidStateError,
+    ItemNotFoundError,
     IssueNotFoundError,
     IssueTypeNotFoundError,
     JobNotFoundError,
@@ -47,6 +48,7 @@ from app.financials import (
     latest_run_id,
 )
 from app.issues import DOCUMENT_TYPES, FINANCE_QUEUE, UNSENT_STATUSES, apply_action, find_issues
+from app.items import DOCUMENT_KINDS, KIND_OF, TITLES, build_items, fingerprint, group_by_job, what_to_ask, with_whom, working_days_from
 from app.landing import land
 from app.models import (
     AskExchange,
@@ -54,6 +56,7 @@ from app.models import (
     Issue,
     IssueEvent,
     IssueEvidence,
+    JobReview,
     IssueType,
     Job,
     JobFinancials,
@@ -70,6 +73,12 @@ from app.schemas import (
     CashSummary,
     CodingResponse,
     CountedOnce,
+    ItemActionRequest,
+    ItemFilters,
+    ItemResponse,
+    ItemsResponse,
+    JobItems,
+    SourceNote,
     CustomerBalance,
     DraftRequest,
     DraftResponse,
@@ -110,6 +119,20 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+# What grouping issues into items needs on top of that: each issue's records and its history.
+def _item_parts():
+    line = selectinload(Issue.evidence).selectinload(IssueEvidence.line)
+    return (
+        selectinload(Issue.type),
+        selectinload(Issue.job).selectinload(Job.owners),
+        selectinload(Issue.events),
+        line.selectinload(MoneyLine.company),
+        line.selectinload(MoneyLine.job).selectinload(Job.owners),
+    )
+
+
+ITEM_PARTS = _item_parts()
+
 # What every issue read loads: its type, and its job with the people on it, which
 # says why the issue's owner has it.
 ISSUE_PARTS = (selectinload(Issue.type), selectinload(Issue.job).selectinload(Job.owners))
@@ -129,6 +152,11 @@ def owned_by(owner: str):
         JobOwner.role == "ops_manager",
         func.lower(JobOwner.name) == owner.lower(),
     )
+
+
+def _person(email: str | None) -> str:
+    """A name from a work address: jenna.okafor@… is Jenna Okafor."""
+    return " ".join(part.capitalize() for part in (email or "unknown").split("@")[0].split("."))
 
 
 def _provider_message(error: APIStatusError) -> str:
@@ -303,6 +331,7 @@ class ReconClient:
                 stages=contract_stages(jobs.contract_value, jobs.earned, jobs.invoiced, jobs.sent, jobs.collected),
             ),
             open_issue_count=sum(row.count for row in by_type),
+            open_item_count=(await self.list_items(ItemFilters(owner=owner))).item_count,
             jobs_with_issues=jobs_with_issues,
             issues_by_type=[
                 IssuesByType(type_key=r.type_key, title=r.title, severity=r.severity, count=r.count, amount=r.amount)
@@ -377,7 +406,10 @@ class ReconClient:
         job, fin = await self._job(job_number)
         issues = (await self._active_issues_by_job([job.id])).get(job.id, [])
         lines = await self._lines(MoneyLine.job_id == job.id, MoneyLine.kind.in_((INVOICE, BILL)))
-        return job_detail_response(job, fin, issues, lines, revenue, cost, (await self._current_run()).as_of)
+        as_of = (await self._current_run()).as_of
+        detail = job_detail_response(job, fin, issues, lines, revenue, cost, as_of)
+        detail.items = await self._job_items(job, as_of)
+        return detail
 
     async def list_job_lines(self, job_number: str, kind: str | None = None) -> list[LineResponse]:
         """Every money line on the job. Each one names the source record it came from."""
@@ -603,39 +635,226 @@ class ReconClient:
     # --- Follow-up drafts --------------------------------------------------------
 
     async def draft_follow_up(self, issue_id: int, payload: DraftRequest) -> DraftResponse:
-        """Draft a message about an issue for a person to send themselves. Who it goes
-        to and every fact in it come from the records; the model only writes the words."""
-        run = await self._current_run()
-        issue = await self._issue_detail(issue_id)
+        """Draft a follow-up starting from one issue. It is drafted for the item the issue belongs to."""
+        issue = await self._issue(issue_id)
         if issue.status not in ACTIVE:
             raise InvalidStateError(f"A {issue.status} issue needs no follow-up. Reopen it first.")
-        recipient = await self._recipient(issue, payload.writer)
+        kind = KIND_OF[issue.type_key]
+        if issue.type_key == "closed_bills":
+            subject = next((e.line.doc_number for e in issue.evidence if e.line.kind == BILL), None)
+        else:
+            subject = issue.document if kind in DOCUMENT_KINDS else (issue.job.job_number if issue.job else None)
+        return await self.draft_for_item(f"{kind}:{subject}", payload)
+
+    # --- Items ---------------------------------------------------------------------
+
+    async def list_items(self, filters: ItemFilters) -> ItemsResponse:
+        """What needs fixing, grouped by job. One item per invoice, bill or gap, however
+        many checks fired on it. Bills with no job form a group of their own."""
+        wanted = ("resolved",) if filters.state == "done" else ACTIVE
+        where = [Issue.status.in_(wanted)]
+        if filters.owner:
+            where.append(func.lower(Issue.owner) == filters.owner.lower())
+        issues = list(await self.db.scalars(select(Issue).where(*where).options(*ITEM_PARTS)))
+        items = await self._items_from(issues, await self._as_of())
+        if filters.state in ("needs_action", "waiting"):
+            items = [item for item in items if item.state == filters.state]
+        if filters.state == "done":
+            # An item with one check resolved and another still open is not done.
+            still_open = await self._open_item_keys()
+            items = [item for item in items if item.key not in still_open]
+
+        jobs = {issue.job.job_number: issue.job for issue in issues if issue.job}
+        groups = await self._reviewed(group_by_job(items, jobs), jobs)
+        if filters.type:
+            groups = [group for group in groups if any(filters.type in item.checks for item in group.items)]
+        return ItemsResponse(groups=groups, item_count=sum(len(group.items) for group in groups))
+
+    async def act_on_item(self, key: str, payload: ItemActionRequest) -> ItemResponse:
+        """Do one thing to an item. It applies to every check behind it, so resolving a
+        bill resolves all the issues that were about that bill. Recorded once in its history."""
+        members = await self._item_issues(key)
+        targets = [i for i in members if (i.status == "resolved") == (payload.action == "reopen") and i.status != "cleared"]
+        if not targets:
+            state = "open" if payload.action == "reopen" else "resolved"
+            raise InvalidStateError(f"This is already {state}.")
+        follow_up = payload.follow_up_on
+        if follow_up is None and payload.follow_up_in_working_days:
+            follow_up = working_days_from(await self._as_of() or date.today(), payload.follow_up_in_working_days)
+
+        lead, others = targets[0], targets[1:]
+        await apply_action(
+            self.db, lead, payload.action, payload.actor, payload.note, payload.assignee, follow_up, payload.clear_follow_up
+        )
+        for other in others:
+            # The same change, without a second entry in the history.
+            other.owner, other.status, other.follow_up_on = lead.owner, lead.status, lead.follow_up_on
+            other.resolution_note, other.dismissed = lead.resolution_note, lead.dismissed
+        await self.db.commit()
+        return await self.get_item(key)
+
+    async def get_item(self, key: str) -> ItemResponse:
+        return await self._pick(key, await self._item_issues(key), await self._as_of())
+
+    async def review_job(self, job_number: str) -> JobItems:
+        """Have the assistant review a job's open items: act, wait or dismiss for each, and
+        which to deal with first. The review is kept until one of the items changes."""
+        run = await self._current_run()
+        job, fin = await self._job(job_number)
+        issues = list(
+            await self.db.scalars(select(Issue).where(Issue.job_id == job.id, Issue.status.in_(ACTIVE)).options(*ITEM_PARTS))
+        )
+        items = await self._items_from(issues, run.as_of)
+        if not items:
+            raise InvalidStateError("There is nothing open on this job to review.")
+        about = {
+            "name": job.name, "stage": job.stage, "contract_value": str(fin.contract_value),
+            "ledger_revenue": str(fin.ledger_revenue), "ledger_cost": str(fin.ledger_cost), "ops_cost": str(fin.ops_cost),
+            "owed_by_customer": str(fin.owed),
+        }
+        about["project_notes"] = await self._project_notes(job)
+        answer = await self._with_model(review.review(about, items, run.as_of))
+
+        await self.db.execute(delete(JobReview).where(JobReview.job_id == job.id))
+        self.db.add(JobReview(job_id=job.id, fingerprint=fingerprint(items), payload=answer))
+        await self.db.commit()
+        return (await self._reviewed(group_by_job(items, {job.job_number: job}), {job.job_number: job}))[0]
+
+    async def _project_notes(self, job: Job) -> list[dict]:
+        """What the project team has written about the job in the project system."""
+        project = select(SourceRecord.source_pk).where(SourceRecord.id == job.project_record_id).scalar_subquery()
+        rows = await self.db.scalars(
+            select(SourceRecord.payload)
+            .where(SourceRecord.table_name == "project_notes", SourceRecord.payload["project_id"].astext == project)
+            .order_by(SourceRecord.payload["created_at"].astext)
+        )
+        return [
+            {"by": _person(payload.get("created_by_email")), "on": str(payload.get("created_at"))[:10], "note": payload.get("content")}
+            for payload in rows
+        ]
+
+    async def _job_items(self, job: Job, as_of: date) -> JobItems | None:
+        """One job's open items, with the assistant's review when there is a current one."""
+        issues = list(
+            await self.db.scalars(select(Issue).where(Issue.job_id == job.id, Issue.status.in_(ACTIVE)).options(*ITEM_PARTS))
+        )
+        if not issues:
+            return None
+        jobs = {job.job_number: job}
+        return (await self._reviewed(group_by_job(await self._items_from(issues, as_of), jobs), jobs))[0]
+
+    async def _reviewed(self, groups: list[JobItems], jobs: dict[str, Job]) -> list[JobItems]:
+        """Lay each job's stored review over its items, when the items have not changed since."""
+        ids = {jobs[group.job_number].id: group for group in groups if group.job_number in jobs}
+        if not ids:
+            return groups
+        for stored in await self.db.scalars(select(JobReview).where(JobReview.job_id.in_(ids))):
+            group = ids[stored.job_id]
+            if stored.fingerprint != fingerprint(group.items):
+                continue
+            for item in group.items:
+                entry = stored.payload["items"].get(item.key)
+                if entry and item.state != "done":
+                    item.suggestion = review.suggestion_for(item, entry)
+            group.suggestion = review.first_from(stored.payload, group.items) or group.suggestion
+            group.reviewed_at = stored.created_at
+        return groups
+
+    async def _open_item_keys(self) -> set[str]:
+        issues = list(await self.db.scalars(select(Issue).where(Issue.status.in_(ACTIVE)).options(*ITEM_PARTS)))
+        return {item.key for item in build_items(issues, None)}
+
+    async def _item_issues(self, key: str) -> list[Issue]:
+        """Every issue behind one item, whatever its status, from the item's name."""
+        kind, _, subject = key.partition(":")
+        if kind not in TITLES or not subject:
+            raise ItemNotFoundError(key)
+        if kind in DOCUMENT_KINDS:
+            # The checks about the document itself, plus a closed job's check that cites it.
+            on_same_job = select(Issue.job_id).where(Issue.document == subject, Issue.job_id.is_not(None))
+            where = or_(Issue.document == subject, and_(Issue.type_key == "closed_bills", Issue.job_id.in_(on_same_job)))
+        else:
+            where = Issue.job_id.in_(select(Job.id).where(Job.job_number == subject.upper()))
+        # Read afresh: an action just taken has added to the history.
+        issues = list(
+            await self.db.scalars(
+                select(Issue).where(where, Issue.status != "cleared").options(*ITEM_PARTS).execution_options(populate_existing=True)
+            )
+        )
+        members = [i for i in issues if KIND_OF[i.type_key] == kind]
+        if not any(item.key == key for item in build_items(members, None)):
+            raise ItemNotFoundError(key)
+        return sorted(
+            (i for i in members if key in {item.key for item in build_items([i], None)}),
+            key=lambda i: (i.status not in ACTIVE, i.type.severity != "high", -i.amount, i.id),
+        )
+
+    async def _pick(self, key: str, members: list[Issue], as_of: date | None) -> ItemResponse:
+        return next(item for item in await self._items_from(members, as_of) if item.key == key)
+
+    async def _items_from(self, issues: list[Issue], as_of: date | None) -> list[ItemResponse]:
+        """Group issues into items, and give each invoice the notes already written on it in accounting."""
+        items = build_items(issues, as_of)
+        numbers = [item.document for item in items if item.document and item.kind.startswith("invoice")]
+        if not numbers:
+            return items
+        note, invoice = aliased(SourceRecord), aliased(SourceRecord)
+        rows = await self.db.execute(
+            select(invoice.payload["invoice_number"].astext, note.payload)
+            .join(invoice, and_(invoice.table_name == "ar_invoices", invoice.source_pk == note.payload["invoice_id"].astext))
+            .where(note.table_name == "ar_invoice_notes", invoice.payload["invoice_number"].astext.in_(numbers))
+            .order_by(note.payload["created_at"].astext)
+        )
+        written: dict[str, list[SourceNote]] = defaultdict(list)
+        for number, payload in rows:
+            written[number].append(
+                SourceNote(by=_person(payload.get("created_by_email")), on=str(payload.get("created_at"))[:10], note=payload.get("content") or "")
+            )
+        for item in items:
+            item.source_notes = written.get(item.document or "", [])
+        return items
+
+    async def draft_for_item(self, key: str, payload: DraftRequest) -> DraftResponse:
+        """Draft the message that the work on an item starts with. Who it goes to, what it
+        asks for and every fact in it come from the records and fixed rules."""
+        run = await self._current_run()
+        item = await self._pick(key, await self._item_issues(key), run.as_of)
+        if item.state == "done":
+            raise InvalidStateError("This is already resolved, so there is nothing to follow up.")
+        if item.action.key not in ("message_customer", "message_colleague"):
+            raise InvalidRequestError(f"{item.title} is not fixed by sending a message.")
+        status = next((line.status for line in item.evidence if line.doc_number == item.document), None)
         facts = {
-            "problem": issue.title,
-            "what_is_wrong": issue.detail,
-            "suggested_next_step": issue.next_step,
-            "job": issue.job_name,
-            "job_number": issue.job_number,
-            "document": issue.document,
-            "amount": issue.amount,
-            "due_on": issue.due_on,
-            "days_late": issue.days_late,
+            "problem": item.title,
+            "what_is_wrong": item.details,
+            "tags": [tag.label for tag in item.tags],
+            "what_to_ask_for": what_to_ask(item.kind, status, item.document),
+            "job": item.job_name,
+            "job_number": item.job_number,
+            "document": item.document,
+            "amount": item.amount,
+            "due_on": item.due_on,
+            "days_late": item.days_late,
             "records": [
                 {
                     "number": line.doc_number, "company": line.company, "amount": line.amount, "paid": line.paid_amount,
                     "unpaid": line.open_amount, "dated": line.line_date, "due": line.due_date, "status": line.status,
                 }
-                for line in issue.evidence
+                for line in item.evidence
                 if line.kind in (INVOICE, BILL)
             ],
             "notes_so_far": [
-                {"by": event.actor, "on": event.created_at.date(), "note": event.note}
-                for event in issue.events
-                if event.kind == "commented"
+                *({"by": note.by, "on": note.on, "note": note.note} for note in item.source_notes),
+                *(
+                    {"by": event.actor, "on": event.created_at.date(), "note": event.note}
+                    for event in item.events
+                    if event.kind == "commented"
+                ),
             ],
         }
         facts = json.loads(json.dumps(facts, default=str))
-        return await self._with_model(drafts.write(facts, payload.writer, recipient, issue.document, run.as_of))
+        recipient = await self._recipient(item, status, payload.writer)
+        return await self._with_model(drafts.write(facts, payload.writer, recipient, item.document, run.as_of))
 
     # --- Bill coding ---------------------------------------------------------------
 
@@ -764,11 +983,11 @@ class ReconClient:
             work_by_job=work,
         )
 
-    async def _recipient(self, issue: IssueDetailResponse, writer: str) -> Recipient:
-        """Who a follow-up about this issue goes to. A late invoice goes to the customer's
-        billing contact. Everything else stays inside the company: to whoever has the
-        issue, or to finance when the person writing is the one who has it."""
-        if issue.type_key in drafts.CUSTOMER_TYPES and issue.job_number:
+    async def _recipient(self, item: ItemResponse, status: str | None, writer: str) -> Recipient:
+        """Who a message about an item goes to. An unpaid invoice goes to the customer's
+        billing contact. Everything else stays inside the company, to whoever the item is
+        waiting on: the job's ops manager or finance. Nobody is written to about their own item."""
+        if item.action.key == "message_customer" and item.job_number:
             company, contact = aliased(SourceRecord), aliased(SourceRecord)
             row = (
                 await self.db.execute(
@@ -780,7 +999,7 @@ class ReconClient:
                         contact,
                         and_(contact.table_name == "contacts", contact.source_pk == company.payload["billing_contact_id"].astext),
                     )
-                    .where(Job.job_number == issue.job_number)
+                    .where(Job.job_number == item.job_number)
                 )
             ).one_or_none()
             if row:
@@ -791,14 +1010,24 @@ class ReconClient:
                 )
             return Recipient(audience="customer", name="Accounts payable", role="The customer's payables desk", email=None)
 
-        if issue.owner.lower() == writer.lower() or issue.owner == FINANCE_QUEUE:
-            return Recipient(audience="internal", name="Finance", role="Harborstone's finance team", email=None)
-        email = await self.db.scalar(select(JobOwner.email).where(JobOwner.name == issue.owner).limit(1))
+        finance = Recipient(audience="internal", name="Finance", role="Harborstone's finance team", email=None)
+        on_the_job = item.owner != FINANCE_QUEUE
+        writer_has_it = item.owner.lower() == writer.lower()
+        # Waiting on the project team: write to whoever has it, unless that is the writer.
+        # Waiting on finance: the project team writes to finance, and finance writes to the project team.
+        to_owner = on_the_job and not writer_has_it and (with_whom(item.kind, status) == "ops" or not await self._on_a_job(writer))
+        if not to_owner:
+            return finance
+        email = await self.db.scalar(select(JobOwner.email).where(JobOwner.name == item.owner).limit(1))
         roles = {"ops_manager": "the job's ops manager", "account_executive": "the job's account executive"}
         return Recipient(
-            audience="internal", name=issue.owner,
-            role=f"Has this issue as {roles.get(issue.owner_role, 'its assigned owner')}", email=email,
+            audience="internal", name=item.owner,
+            role=f"Has this issue as {roles.get(item.owner_role, 'its assigned owner')}", email=email,
         )
+
+    async def _on_a_job(self, person: str) -> bool:
+        """Whether this person is an ops manager or account executive on any job. Finance is not."""
+        return bool(await self.db.scalar(select(exists().where(func.lower(JobOwner.name) == person.lower()))))
 
     async def list_ask_history(self, asked_by: str, limit: int = 50) -> list[AskResponse]:
         """One person's conversation, oldest first, ending with the most recent exchange."""

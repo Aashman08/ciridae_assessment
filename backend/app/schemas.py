@@ -296,6 +296,7 @@ class JobDetailResponse(JobSummaryResponse):
     issues: list[IssueResponse]
     invoices: list[LineResponse]
     vendor_bills: list[LineResponse]
+    items: "JobItems | None" = Field(None, description="What needs fixing on this job, one item per invoice, bill or gap")
 
 
 # --- Summary -------------------------------------------------------------------
@@ -348,7 +349,8 @@ class SummaryResponse(BaseModel):
     job_count: int
     cash: CashSummary
     contract_to_cash: ContractToCash
-    open_issue_count: int
+    open_issue_count: int = Field(description="How many checks have fired and are still open")
+    open_item_count: int = Field(description="How many things there are to fix. Several checks on one invoice or bill count once")
     jobs_with_issues: int
     issues_by_type: list[IssuesByType]
     flagged_documents: CountedOnce = Field(
@@ -533,6 +535,136 @@ class AskAnswer(BaseModel):
     as_of: date
 
 
+# --- Items ---------------------------------------------------------------------
+# An item is one thing a person fixes: an invoice, a bill, or a gap on a job. The
+# checks that fire on it become its tags.
+
+ItemKind = Literal[
+    "invoice_unpaid", "invoice_not_sent", "bill_stuck", "bill_no_job", "cost_gap", "billing_gap", "no_ops_manager"
+]
+ActionKey = Literal["message_customer", "message_colleague", "code_bill", "assign_ops_manager", "wait", "dismiss"]
+
+
+class ItemTag(BaseModel):
+    key: str
+    label: str
+
+
+class ItemAction(BaseModel):
+    """Something the app can start: a drafted message, a bill coding, an assignment, a date or a dismissal."""
+
+    key: ActionKey
+    label: str = Field(description="What the button says, such as Chase the customer")
+
+
+class Suggestion(BaseModel):
+    action: ItemAction
+    reason: str | None = Field(description="Why, in one sentence. None when it is the standing rule for this kind of item")
+    follow_up_on: date | None = Field(description="With wait: the date to come back")
+    by: Literal["rule", "assistant"]
+
+
+class SourceNote(BaseModel):
+    """A note someone wrote in one of Harborstone's own systems."""
+
+    by: str
+    on: date
+    note: str
+
+
+class ItemResponse(BaseModel):
+    key: str = Field(description="Stable name: the kind and what it is about, such as bill_stuck:APX-40766")
+    kind: ItemKind
+    title: str
+    document: str | None
+    company: str | None = Field(description="The customer or vendor on the document, when there is one")
+    job_number: str | None
+    job_name: str | None
+    amount: Money
+    severity: Literal["high", "medium"]
+    tags: list[ItemTag]
+    due_on: date | None
+    days_late: int | None
+    owner: str
+    owner_role: Literal["ops_manager", "account_executive", "finance", "assigned"]
+    state: Literal["needs_action", "waiting", "done"]
+    follow_up_on: date | None
+    note_count: int
+    details: list[str] = Field(description="What is wrong, one sentence for each check that fired")
+    resolution_note: str | None
+    checks: list[str] = Field(description="The issue types behind this item")
+    issue_ids: list[int]
+    action: ItemAction = Field(description="The work that fixes this kind of item")
+    suggestion: Suggestion
+    evidence: list[LineResponse]
+    events: list[EventResponse]
+    source_notes: list[SourceNote] = Field(
+        default_factory=list, description="Notes on this invoice in accounting, written before it reached this app"
+    )
+
+
+class JobSuggestion(BaseModel):
+    """The one thing to do first on a job."""
+
+    item_key: str
+    action: ItemAction
+    reason: str | None
+    by: Literal["rule", "assistant"]
+
+
+class JobItems(BaseModel):
+    job_number: str | None = Field(description="None for bills that are not on any job")
+    job_name: str | None
+    ops_manager: str | None
+    flagged_amount: Money = Field(description="Unpaid or unsent on this job's flagged invoices and bills, each counted once")
+    tags: list[ItemTag] = Field(description="Every distinct tag on the job's items")
+    items: list[ItemResponse]
+    suggestion: JobSuggestion | None
+    reviewed_at: datetime | None = Field(description="When the assistant last reviewed these items. None if it has not, or they have changed since")
+
+
+class ItemsResponse(BaseModel):
+    groups: list[JobItems]
+    item_count: int
+
+
+class ItemFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["open", "needs_action", "waiting", "done"] = "open"
+    owner: str | None = None
+    type: str | None = Field(None, description="Only jobs with an item that this issue type fired on")
+
+
+class ItemActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    action: Literal["update", "resolve", "dismiss", "reopen"] = Field(
+        description="update saves any of a note, a new owner and a follow-up date; dismiss closes it as expected"
+    )
+    actor: str = Field(min_length=1, max_length=120)
+    note: str | None = None
+    assignee: str | None = Field(None, max_length=120)
+    follow_up_on: date | None = None
+    follow_up_in_working_days: int | None = Field(None, ge=1, le=30, description="Set the follow-up this many working days from today")
+    clear_follow_up: bool = False
+
+
+class ReviewedItem(BaseModel):
+    item_key: str
+    decision: Literal["act", "wait", "dismiss"]
+    wait_until: str | None = Field(description="With wait: the date to come back, as YYYY-MM-DD")
+    reason: str = Field(min_length=1, max_length=300)
+
+
+class ReviewReply(BaseModel):
+    """What the model must hand back after reviewing a job's items."""
+
+    items: list[ReviewedItem]
+    first_item_key: str | None = Field(description="The item to deal with first, if any needs action")
+    why_first: str | None
+
+
 # --- Bill coding ---------------------------------------------------------------
 
 
@@ -617,3 +749,4 @@ class AskResponse(BaseModel):
 
 
 CodingResponse.model_rebuild()
+JobDetailResponse.model_rebuild()

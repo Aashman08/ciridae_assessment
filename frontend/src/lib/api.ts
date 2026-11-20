@@ -88,6 +88,76 @@ export interface IssueDetail extends Issue {
   related: { id: number; title: string; severity: 'high' | 'medium'; amount: Money }[]
 }
 
+/** Something the app can start: a drafted message, a bill coding, an assignment, a date or a dismissal. */
+export interface ItemAction {
+  key: 'message_customer' | 'message_colleague' | 'code_bill' | 'assign_ops_manager' | 'wait' | 'dismiss'
+  /** What the button says, such as "Chase the customer". */
+  label: string
+}
+
+/**
+ * One thing a person fixes: an invoice, a bill, or a gap on a job. The checks
+ * that fired on it are its tags.
+ */
+export interface Item {
+  /** Stable name: the kind and what it is about, such as "bill_stuck:APX-40766". */
+  key: string
+  kind: 'invoice_unpaid' | 'invoice_not_sent' | 'bill_stuck' | 'bill_no_job' | 'cost_gap' | 'billing_gap' | 'no_ops_manager'
+  title: string
+  document: string | null
+  company: string | null
+  job_number: string | null
+  job_name: string | null
+  amount: Money
+  severity: 'high' | 'medium'
+  tags: { key: string; label: string }[]
+  due_on: string | null
+  days_late: number | null
+  owner: string
+  owner_role: Issue['owner_role']
+  state: 'needs_action' | 'waiting' | 'done'
+  follow_up_on: string | null
+  note_count: number
+  /** What is wrong, one sentence for each check that fired. */
+  details: string[]
+  resolution_note: string | null
+  checks: string[]
+  issue_ids: number[]
+  /** The work that fixes this kind of item, by fixed rule. */
+  action: ItemAction
+  /** What to do next: the rule, or the assistant's review when there is a current one. */
+  suggestion: { action: ItemAction; reason: string | null; follow_up_on: string | null; by: 'rule' | 'assistant' }
+  evidence: Line[]
+  events: IssueEvent[]
+  /** Notes on this invoice in accounting, written before it reached this app. */
+  source_notes: { by: string; on: string; note: string }[]
+}
+
+/** A job and what needs fixing on it. `job_number` is null for bills that are on no job. */
+export interface JobItems {
+  job_number: string | null
+  job_name: string | null
+  ops_manager: string | null
+  /** Unpaid or unsent on this job's flagged invoices and bills, each counted once. */
+  flagged_amount: Money
+  tags: { key: string; label: string }[]
+  items: Item[]
+  /** The one thing to do first. */
+  suggestion: { item_key: string; action: ItemAction; reason: string | null; by: 'rule' | 'assistant' } | null
+  /** When the assistant last reviewed these items. Null if it has not, or they have changed since. */
+  reviewed_at: string | null
+}
+
+export interface ItemUpdate {
+  action: 'update' | 'resolve' | 'dismiss' | 'reopen'
+  actor: string
+  note?: string
+  assignee?: string
+  follow_up_on?: string
+  follow_up_in_working_days?: number
+  clear_follow_up?: boolean
+}
+
 /** Someone an issue can belong to. */
 export interface Person {
   name: string
@@ -191,6 +261,8 @@ export interface JobDetail extends JobSummary {
   issues: Issue[]
   invoices: Line[]
   vendor_bills: Line[]
+  /** What needs fixing on this job. Null when nothing is open. */
+  items: JobItems | null
 }
 
 export interface Summary {
@@ -220,7 +292,10 @@ export interface Summary {
       share_pct: string
     }[]
   }
+  /** How many checks have fired and are still open. */
   open_issue_count: number
+  /** How many things there are to fix. Several checks on one document count once. */
+  open_item_count: number
   jobs_with_issues: number
   issues_by_type: { type_key: string; title: string; severity: string; count: number; amount: Money }[]
   /** Invoices and bills with an open issue, each counted once, and what is unpaid on them. */
@@ -389,6 +464,11 @@ export const api = {
     request<ListResponse<Issue>>(`/issues${query(params)}`),
   issue: (id: number) => request<IssueDetail>(`/issues/${id}`),
   actOnIssue: (id: number, body: IssueUpdate) => post<IssueDetail>(`/issues/${id}/actions`, body),
+  items: (params: { state?: string; owner?: string; type?: string }) =>
+    request<{ groups: JobItems[]; item_count: number }>(`/items${query(params)}`),
+  actOnItem: (key: string, body: ItemUpdate) => post<Item>(`/items/${encodeURIComponent(key)}/actions`, body),
+  draftForItem: (key: string, writer: string) => post<Draft>(`/items/${encodeURIComponent(key)}/draft`, { writer }),
+  reviewJob: (jobNumber: string) => post<JobItems>(`/jobs/${jobNumber}/review`),
   people: () => request<Person[]>('/people'),
   sources: () => request<SourceSystem[]>('/sources'),
 
