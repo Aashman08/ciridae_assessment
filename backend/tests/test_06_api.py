@@ -537,17 +537,21 @@ async def test_contract_value_is_split_by_how_far_it_has_got(api):
     assert stages["collected"] == Decimal(flow["collected"])
     assert stages["sent_not_collected"] == Decimal(flow["sent"]) - Decimal(flow["collected"])
     assert stages["invoiced_not_sent"] == Decimal("369100.00")
+    # Earned and not invoiced is counted job by job: CTX00080002 ($107,700) and BTX00140002
+    # ($19,900). Jobs billed ahead, like CTX00150002 with $52,300 invoiced and nothing booked, do not offset it.
+    assert stages["earned_not_invoiced"] == Decimal("127600.00")
     assert abs(sum(Decimal(stage["share_pct"]) for stage in flow["stages"]) - 100) <= Decimal("0.2")
 
 
 def test_a_stage_that_runs_ahead_never_goes_negative():
     from app.financials import contract_stages
 
-    # Invoiced ahead of what the ledger shows as earned.
-    parts = {p["key"]: p["amount"] for p in contract_stages(Decimal(100), Decimal(40), Decimal(60), Decimal(50), Decimal(20))}
+    # Two jobs: one billed $20 ahead of what it earned, one with $15 earned and not billed.
+    # The $15 stays unbilled; the job billed ahead does not cancel it.
+    parts = {p["key"]: p["amount"] for p in contract_stages(Decimal(100), Decimal(60), Decimal(50), Decimal(20), Decimal(15))}
     assert parts == {
         "collected": Decimal(20), "sent_not_collected": Decimal(30), "invoiced_not_sent": Decimal(10),
-        "earned_not_invoiced": Decimal(0), "not_yet_earned": Decimal(40),
+        "earned_not_invoiced": Decimal(15), "not_yet_earned": Decimal(25),
     }
     assert sum(parts.values()) == Decimal(100)
     assert all(p["share_pct"] == 0 for p in contract_stages(Decimal(0), Decimal(0), Decimal(0), Decimal(0), Decimal(0)))

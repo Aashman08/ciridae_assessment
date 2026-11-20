@@ -41,6 +41,7 @@ from app.errors import (
 from app.financials import (
     LEDGER_MARGIN,
     LEDGER_PROFIT,
+    UNBILLED,
     CostBasis,
     RevenueBasis,
     compute_financials,
@@ -278,6 +279,7 @@ class ReconClient:
                     total_of(fin.invoiced, live).label("invoiced"),
                     total_of(fin.sent, live).label("sent"),
                     total_of(fin.collected, live).label("collected"),
+                    total_of(UNBILLED, live).label("unbilled"),
                 )
                 .select_from(fin)
                 .join(Job, Job.id == fin.job_id)
@@ -352,7 +354,7 @@ class ReconClient:
                 invoiced=jobs.invoiced,
                 sent=jobs.sent,
                 collected=jobs.collected,
-                stages=contract_stages(jobs.contract_value, jobs.earned, jobs.invoiced, jobs.sent, jobs.collected),
+                stages=contract_stages(jobs.contract_value, jobs.invoiced, jobs.sent, jobs.collected, jobs.unbilled),
             ),
             open_issue_count=sum(row.count for row in by_type),
             open_item_count=(await self.list_items(ItemFilters(owner=owner))).item_count,

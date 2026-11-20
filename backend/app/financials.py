@@ -73,18 +73,19 @@ def margin_pct(revenue: Decimal, cost: Decimal) -> Decimal | None:
     return ((revenue - cost) / revenue * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
 
 
-def contract_stages(contract: Decimal, earned: Decimal, invoiced: Decimal, sent: Decimal, collected: Decimal) -> list[dict]:
+def contract_stages(contract: Decimal, invoiced: Decimal, sent: Decimal, collected: Decimal, unbilled: Decimal) -> list[dict]:
     """Where the contract value sits on its way to cash, as parts that add up to the whole.
 
-    Each part is the money that has reached one stage and not the next. Earned and
-    invoiced can run ahead of each other, so that pair is measured against whichever is larger.
+    Each part is the money that has reached one stage and not the next. `unbilled` is
+    revenue booked and not yet invoiced, added up job by job: a job billed ahead of what it
+    has earned counts as invoiced and never cancels out another job's unbilled work.
     """
     parts = [
         ("collected", collected),
         ("sent_not_collected", sent - collected),
         ("invoiced_not_sent", invoiced - sent),
-        ("earned_not_invoiced", earned - invoiced),
-        ("not_yet_earned", contract - max(earned, invoiced)),
+        ("earned_not_invoiced", unbilled),
+        ("not_yet_earned", contract - invoiced - unbilled),
     ]
     return [
         {
@@ -105,6 +106,9 @@ def ledger_profit(fin: JobFinancials) -> dict:
 # The same two figures as SQL, so a list of jobs can be sorted by them in the database.
 LEDGER_PROFIT = JobFinancials.ledger_revenue - JobFinancials.ledger_cost
 LEDGER_MARGIN = LEDGER_PROFIT / func.nullif(JobFinancials.ledger_revenue, 0)
+# Revenue the ledger has booked on a job and nobody has invoiced yet. Never negative, so a job
+# billed ahead of its revenue adds nothing rather than cancelling another job's unbilled work.
+UNBILLED = func.greatest(JobFinancials.ledger_revenue - JobFinancials.invoiced, 0)
 
 
 def profit(fin: JobFinancials, revenue_basis: RevenueBasis, cost_basis: CostBasis) -> dict:
