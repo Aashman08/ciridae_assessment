@@ -80,6 +80,9 @@ Run from `frontend/`:
   late or failed, amber waiting on someone, green saved or done. Amber (`--accent`)
   still marks what needs a person. Charts use `--series-1` to `--series-5` in order: royal blue, soft green, sky blue, amber, teal, taken from the reference the owner chose. A chart with several series, a pie or a split bar gives every part its own one. Never shades of one hue for different things, and no orange.
   Do not add a colour that does not carry one of these meanings. One icon set (lucide) at 16px with a 1.5 stroke.
+- An item or job opened under its row stays white, like the card it is in. Anything set inside it,
+  such as the records behind an item, sits in a grey well (`bg-bg`) with white buttons. A selected
+  choice or the row whose preview is showing takes the faint brand tint (`bg-brand-soft/50`).
 - Sentence case everywhere, weights 400 to 600, no uppercase labels, no emoji.
 - Money is formatted by `money()` in `lib/format.ts` and nowhere else. Figures
   use the mono face; words do not.

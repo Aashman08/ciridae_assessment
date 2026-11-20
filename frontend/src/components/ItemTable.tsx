@@ -36,6 +36,10 @@ function Tag({ children, tone }: { children: ReactNode; tone: Tone }) {
   return <span className={cx('inline-flex h-6 items-center rounded-md px-2 text-xs whitespace-nowrap', TONE[tone])}>{children}</span>
 }
 
+// Inside an opened item, a heading is the darker, heavier line and what it says is lighter
+// under it, so the eye can tell the question from the answer.
+const HEADING = 'text-[0.8125rem] font-medium text-ink'
+
 /** What kind of thing an item is, as a small tinted icon in its colour. */
 export function KindIcon({ kind }: { kind: Item['kind'] }) {
   const { tone, icon: Icon } = KIND[kind]
@@ -69,27 +73,35 @@ function Detail({ item, work }: { item: Item; work: ReturnType<typeof useItemWor
     <div className="flex flex-col gap-5 px-5 py-5 whitespace-normal">
       <div className="grid grid-cols-1 gap-x-8 gap-y-5 @[58rem]:grid-cols-2">
         <div className="flex flex-col gap-1">
-          <h4 className="text-[0.8125rem] text-ink-2">{done ? 'What was wrong' : 'What is wrong'}</h4>
+          <h4 className={HEADING}>{done ? 'What was wrong' : 'What is wrong'}</h4>
           {item.details.map((detail) => (
-            <p key={detail}>{detail}</p>
+            <p key={detail} className="text-ink-2">
+              {detail}
+            </p>
           ))}
         </div>
         <div className="flex flex-col gap-1">
-          <h4 className="text-[0.8125rem] text-ink-2">{done ? 'How it was closed' : 'Suggested next step'}</h4>
+          <h4 className={HEADING}>{done ? 'How it was closed' : 'Suggested next step'}</h4>
           {done ? (
-            <p>{item.resolution_note ?? 'A later sync no longer found this problem'}</p>
+            <p className="text-ink-2">{item.resolution_note ?? 'A later sync no longer found this problem'}</p>
           ) : (
             <>
-              <p className="font-medium">{suggestion.action.label}</p>
               <p className="text-ink-2">
                 {suggestion.by === 'assistant' ? suggestion.reason : 'The standing rule for this kind of problem'}
               </p>
+              {/* The step is something to do, so it is the primary button, never a tag: tags only describe. */}
+              <span className="pt-2">
+                <Button variant="primary" disabled={work.busy} onClick={() => work.start(item)}>
+                  {suggestion.action.label}
+                </Button>
+              </span>
             </>
           )}
         </div>
       </div>
 
-      <dl className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-x-6 gap-y-4">
+      {/* The same two columns as above, so Follow up on lines up under Suggested next step. */}
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-5 @[58rem]:grid-cols-2">
         {[
           ['Owner', `${item.owner}, ${OWNER_ROLES[item.owner_role]}`],
           ...(item.company ? [[item.kind.startsWith('bill') ? 'Vendor' : 'Customer', item.company]] : []),
@@ -97,25 +109,25 @@ function Detail({ item, work }: { item: Item; work: ReturnType<typeof useItemWor
           ['Follow up on', item.follow_up_on ? longDate(item.follow_up_on) : 'No date set'],
         ].map(([label, value]) => (
           <div key={label} className="flex min-w-0 flex-col gap-1">
-            <dt className="text-[0.8125rem] text-ink-2">{label}</dt>
-            <dd>{value}</dd>
+            <dt className={HEADING}>{label}</dt>
+            <dd className="text-ink-2">{value}</dd>
           </div>
         ))}
       </dl>
 
       <div className="flex flex-col gap-2">
-        <h4 className="text-[0.8125rem] text-ink-2">The records behind this</h4>
+        <h4 className={HEADING}>The records behind this</h4>
         <Records lines={item.evidence} />
       </div>
 
       {item.source_notes.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h4 className="text-[0.8125rem] text-ink-2">Notes in accounting</h4>
+          <h4 className={HEADING}>Notes in accounting</h4>
           <ul className="flex flex-col gap-3">
             {item.source_notes.map((note) => (
               <li key={note.on + note.note} className="text-[0.8125rem]">
                 <p>
-                  <span className="font-medium">{note.by}</span>
+                  <span className="text-ink-2">{note.by}</span>
                   <span className="pl-2 font-mono text-xs text-muted">{longDate(note.on)}</span>
                 </p>
                 <p className="text-ink-2">{note.note}</p>
@@ -125,35 +137,38 @@ function Detail({ item, work }: { item: Item; work: ReturnType<typeof useItemWor
         </div>
       )}
 
-      <div className="flex flex-col gap-2">
-        <h4 className="text-[0.8125rem] text-ink-2">History</h4>
-        <ol className="flex flex-col gap-3">
-          {item.events.map((event) => (
-            <li key={event.id} className="text-[0.8125rem]">
-              <p>
-                <span className="font-medium">{EVENTS[event.kind] ?? event.kind}</span>
-                <span className="text-ink-2">
-                  {' '}
-                  by {event.actor === 'system' ? 'a sync' : event.actor === 'assistant' ? 'the assistant' : event.actor}
-                </span>
-                <span className="pl-2 font-mono text-xs text-muted">{dateTime(event.created_at)}</span>
-              </p>
-              {event.note && <p className="text-ink-2">{event.note}</p>}
-            </li>
-          ))}
-        </ol>
-      </div>
-
-      {!done && (
-        <div className="flex flex-wrap gap-2">
-          {/* The work the rules name is always on offer, whatever the assistant suggested. */}
-          {suggestion.action.key !== item.action.key && (
-            <Button onClick={() => work.start(item, { ...suggestion, action: item.action })}>{item.action.label}</Button>
-          )}
-          <Button onClick={() => work.update(item)}>Log update</Button>
-          {suggestion.action.key !== 'dismiss' && <Button onClick={() => work.dismiss(item)}>Dismiss as expected</Button>}
+      {/* History on the left and what you can do on the right, on one line at the foot of the item. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <div className="flex flex-col gap-2">
+          <h4 className={HEADING}>History</h4>
+          <ol className="flex flex-col gap-3">
+            {item.events.map((event) => (
+              <li key={event.id} className="text-[0.8125rem]">
+                <p>
+                  <span className="text-ink-2">{EVENTS[event.kind] ?? event.kind}</span>
+                  <span className="text-muted">
+                    {' '}
+                    by {event.actor === 'system' ? 'a sync' : event.actor === 'assistant' ? 'the assistant' : event.actor}
+                  </span>
+                  <span className="pl-2 font-mono text-xs text-muted">{dateTime(event.created_at)}</span>
+                </p>
+                {event.note && <p className="text-ink-2">{event.note}</p>}
+              </li>
+            ))}
+          </ol>
         </div>
-      )}
+
+        {!done && (
+          <div className="ml-auto flex flex-wrap justify-end gap-2">
+            {/* The work the rules name is always on offer, whatever the assistant suggested. */}
+            {suggestion.action.key !== item.action.key && (
+              <Button onClick={() => work.start(item, { ...suggestion, action: item.action })}>{item.action.label}</Button>
+            )}
+            <Button onClick={() => work.update(item)}>Log update</Button>
+            {suggestion.action.key !== 'dismiss' && <Button onClick={() => work.dismiss(item)}>Dismiss as expected</Button>}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -244,7 +259,7 @@ export function ItemTable({ items, showJob = false, empty = 'Nothing needs fixin
                   </tr>
                   {expanded && (
                     <tr>
-                      <td colSpan={columns} className="h-auto! bg-bg p-0!">
+                      <td colSpan={columns} className="h-auto! bg-card p-0!">
                         <Detail item={item} work={work} />
                       </td>
                     </tr>

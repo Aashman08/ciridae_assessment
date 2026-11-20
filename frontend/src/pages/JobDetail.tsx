@@ -25,7 +25,7 @@ function FigurePicker<Basis extends string>({ title, name, options, value, onCha
         {options.map((option) => (
           <label
             key={option.basis}
-            className="grid cursor-pointer grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-lg p-3 transition-colors duration-150 ease-out hover:bg-raised has-checked:bg-raised has-checked:ring-1 has-checked:ring-hair has-checked:ring-inset has-focus-visible:outline-2 has-focus-visible:outline-accent-ink"
+            className="grid cursor-pointer grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 rounded-lg p-3 transition-colors duration-150 ease-out hover:bg-brand-soft/30 has-checked:bg-brand-soft/50 has-checked:ring-1 has-checked:ring-brand/40 has-checked:ring-inset has-focus-visible:outline-2 has-focus-visible:outline-accent-ink"
           >
             <input
               type="radio"
@@ -35,7 +35,7 @@ function FigurePicker<Basis extends string>({ title, name, options, value, onCha
               onChange={() => onChange(option.basis)}
               className="peer sr-only"
             />
-            <span className="size-4 rounded-full ring-[1.5px] ring-muted ring-inset peer-checked:ring-[0.3125rem] peer-checked:ring-ink" />
+            <span className="size-4 rounded-full ring-[1.5px] ring-muted ring-inset peer-checked:ring-[0.3125rem] peer-checked:ring-brand" />
             <span className="font-medium">{option.label}</span>
             <span className="font-mono tabular-nums">{money(option.amount)}</span>
             <span className="col-span-2 col-start-2 text-xs leading-4 text-muted">{option.description}</span>
@@ -158,7 +158,7 @@ function Documents({ title, lines, empty, vendor = false }: DocumentsProps) {
               {lines.map((line) => (
                 <tr
                   key={line.id}
-                  className={`clickable ${showing === line.id ? 'bg-raised' : ''}`}
+                  className={`clickable ${showing === line.id ? 'bg-brand-soft/50' : ''}`}
                   aria-current={showing === line.id || undefined}
                   onClick={() => open(line)}
                 >

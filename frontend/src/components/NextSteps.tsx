@@ -67,7 +67,7 @@ export function NextSteps({ jobNumber, items }: { jobNumber: string; items: JobI
         ) : (
           first &&
           items.suggestion && (
-            <div className="mx-5 mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-lg bg-raised p-4">
+            <div className="mx-5 mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-lg bg-brand-soft/50 p-4">
               <div className="min-w-0 flex-1">
                 <p className="text-[0.8125rem] text-ink-2">Do this first</p>
                 <p className="font-medium">

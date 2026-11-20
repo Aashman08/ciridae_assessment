@@ -169,12 +169,17 @@ function Sidebar() {
 
   return (
     <aside className="flex flex-col border-b border-hair bg-side px-4 py-3 md:sticky md:top-0 md:h-screen md:overflow-y-auto md:border-r md:border-b-0 md:px-3 md:py-4">
-      <Link to="/" className="flex h-9 items-center gap-2 px-2 text-base font-semibold">
+      {/* On a wide screen the name sits in a row as tall as the top bar, with the same line under it,
+          so the bar and the sidebar meet in one straight line. */}
+      <Link
+        to="/"
+        className="flex h-9 shrink-0 items-center gap-2 px-2 text-base font-semibold md:-mx-3 md:-mt-4 md:h-14 md:border-b md:border-hair md:px-5"
+      >
         <Mark />
         Reconciliation
       </Link>
 
-      <p className="hidden px-2 pt-6 pb-2 text-xs leading-4 text-muted md:block">Signed in as</p>
+      <p className="hidden px-2 pt-5 pb-2 text-xs leading-4 text-muted md:block">Signed in as</p>
       <div className="pt-2 md:pt-0">
         <AccountSwitcher />
       </div>
@@ -296,7 +301,7 @@ export function Shell() {
       <Sidebar />
       <div className="flex min-w-0 flex-col">
         {/* The top bar is part of the frame, with the sidebar, so it shares the sidebar's white. */}
-        <header className="flex h-14 items-center justify-between gap-4 border-b border-hair bg-side px-4 md:px-6">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-hair bg-side px-4 md:px-6">
           <Crumb />
           <TopBarRight />
         </header>

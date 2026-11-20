@@ -71,7 +71,7 @@ function InvoiceRows({
           const sent = line.status === 'SENT'
           const late = sent && Number(line.open_amount) > 0 && line.due_date !== null && line.due_date < asOf
           return (
-            <tr key={line.id} className={`clickable ${showing === line.id ? 'bg-raised' : ''}`} onClick={() => onOpen(line)}>
+            <tr key={line.id} className={`clickable ${showing === line.id ? 'bg-brand-soft/50' : ''}`} onClick={() => onOpen(line)}>
               <td className="font-mono text-[0.8125rem]">{line.doc_number}</td>
               <td>{line.company}</td>
               <td>
@@ -107,7 +107,7 @@ function BillRows({ lines, onOpen, showing }: { lines: Line[]; onOpen: (line: Li
       </thead>
       <tbody>
         {lines.map((line) => (
-          <tr key={line.id} className={`clickable ${showing === line.id ? 'bg-raised' : ''}`} onClick={() => onOpen(line)}>
+          <tr key={line.id} className={`clickable ${showing === line.id ? 'bg-brand-soft/50' : ''}`} onClick={() => onOpen(line)}>
             <td className="font-mono text-[0.8125rem]">{line.doc_number}</td>
             <td>{line.company ?? line.description}</td>
             <td>

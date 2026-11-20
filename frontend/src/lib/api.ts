@@ -505,14 +505,6 @@ export interface SourceSystem {
   last_read_at: string | null
 }
 
-export interface SourceRecord {
-  id: number
-  system: string
-  table_name: string
-  source_pk: string
-  payload: Record<string, unknown>
-}
-
 /** An error the API explained. `requestId` is what to quote when asking for help. */
 export class ApiError extends Error {
   status: number
@@ -622,6 +614,5 @@ export const api = {
   askHistory: (askedBy: string) => request<AskResponse[]>(`/ask/history${query({ asked_by: askedBy })}`),
   clearAskHistory: (askedBy: string) => request<void>(`/ask/history${query({ asked_by: askedBy })}`, { method: 'DELETE' }),
 
-  sourceRecord: (id: number) => request<SourceRecord>(`/source-records/${id}`),
   document: (lineId: number) => request<Document>(`/lines/${lineId}/document`),
 }

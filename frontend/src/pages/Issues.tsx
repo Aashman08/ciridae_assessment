@@ -157,7 +157,7 @@ export function Issues() {
                           </tr>
                           {expanded && (
                             <tr>
-                              <td colSpan={viewer.owner ? 6 : 7} className="h-auto! bg-bg p-3! md:p-4!">
+                              <td colSpan={viewer.owner ? 6 : 7} className="h-auto! bg-card p-3! md:p-4!">
                                 <div className="overflow-hidden rounded-lg border border-hair bg-card">
                                   <ItemTable items={group.items} />
                                 </div>

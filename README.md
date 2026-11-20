@@ -109,7 +109,7 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 | Jobs | Every job with its revenue, cost, profit and margin. Search by job, number or customer, and sort by any heading. A job's page holds everything about it, including **What needs doing**: the thing to do first, and every item with its next step |
 | Job | Revenue and cost figures side by side. Pick one of each and the profit and margin for that pair appear beside them |
 | Issues | One row per job, with tags for what is wrong and the money flagged, counted once. Opening a row lists each thing to fix on that job. Several checks on one invoice or bill are one item with tags. Each item has a button that starts its next step: a drafted message, a suggested job for a bill, an assignment, a date to wait until, or a dismissal. Bills on no job are a group of their own |
-| Issue | What is wrong, what to do, the records behind it and the untouched source row for each, plus its history |
+| Issue | What is wrong, what to do, the records behind it (an invoice or bill opens its preview in the side pane), plus its history |
 | Customer invoices, Vendor bills | Every invoice and bill across jobs |
 | Connectors | The three source systems with how much of each was read and when, and the email account a follow-up is sent with |
 | Issue types | The thirteen checks, with an on/off switch and tolerance for each. **Sync now** here applies a change straight away |
