@@ -192,11 +192,11 @@
     white-space: nowrap;
   }
 
-  /* A table with ten or more columns sets them closer, so it fits a laptop without scrolling. */
+  /* A table with eight or more columns sets them a little closer, so it fits a laptop without scrolling. */
   .data-table.dense th,
   .data-table.dense td {
-    padding-left: 0.35rem;
-    padding-right: 0.35rem;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
   }
 
   .data-table.tall td {

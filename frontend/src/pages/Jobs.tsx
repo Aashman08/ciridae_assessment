@@ -65,7 +65,7 @@ export function Jobs() {
       <PageHead
         title="Jobs"
         aside={jobs.data?.total}
-        sub="Profit and margin use the ledger's revenue and cost. Open a job to see them with the other figures"
+        sub="Revenue, cost and profit are the ledger's. Open a job for its other figures"
       >
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <SearchBox label="Job, number or customer" value={q} onChange={search} />

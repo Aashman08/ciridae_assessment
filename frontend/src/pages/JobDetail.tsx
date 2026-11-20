@@ -198,7 +198,7 @@ export function JobDetail() {
             }
           />
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_18.75rem] 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_25rem]">
+          <div className="grid grid-cols-1 gap-4 @[58rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_18.75rem] @[80rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_25rem]">
             <FigurePicker title="Revenue" name="revenue" options={data.revenue_options} value={revenue} onChange={setRevenue} />
             <FigurePicker title="Cost" name="cost" options={data.cost_options} value={cost} onChange={setCost} />
             <ProfitResult job={data} />
@@ -211,7 +211,7 @@ export function JobDetail() {
             <IssueTable issues={data.issues} showJob={false} showOwner={false} />
           </Card>
 
-          <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 @[80rem]:grid-cols-2">
             <Documents title="Customer invoices" lines={data.invoices} empty="No invoices yet" />
             <Documents title="Vendor bills" lines={data.vendor_bills} empty="No vendor bills on this job" vendor />
           </div>

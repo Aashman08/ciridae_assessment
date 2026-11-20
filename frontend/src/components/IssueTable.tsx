@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { Issue, IssueSort, Order } from '../lib/api'
-import { isoToday, money, shortDate } from '../lib/format'
+import { money, shortDate } from '../lib/format'
 import { useViewer } from '../lib/viewer'
 import { UpdateDialog } from './UpdateDialog'
 import { Empty, SortHeader } from './ui'
@@ -26,9 +26,9 @@ interface IssueTableProps {
 const ICON = { size: '1rem', strokeWidth: 1.5, 'aria-hidden': true } as const
 
 /**
- * One fact per column, one line per row: what kind of issue, how serious, which
- * document, when it was due and how late it is, which job, whose it is, how
- * much, and when someone said they would come back to it.
+ * Only what someone needs to decide which issue to open: what kind, how serious,
+ * which document, when it was due and how late it is, which job, whose it is and
+ * how much. Notes, follow-up dates and the job's name are on the issue's own page.
  * Clicking anywhere on a row opens the issue. The button on the right logs an
  * update; it never performs the action itself.
  */
@@ -52,10 +52,6 @@ export function IssueTable({
 
   if (issues.length === 0) return <Empty>{empty}</Empty>
 
-  // There is no room for the job's name until the screen is wide. Its ID stays,
-  // and the row opens the issue, which names the job.
-  const jobName = 'max-2xl:hidden'
-  const today = isoToday()
 
   function heading(label: string, by: IssueSort, options: { numeric?: boolean; first?: Order; className?: string } = {}) {
     const { numeric = false, first, className = 'max-md:hidden' } = options
@@ -82,11 +78,8 @@ export function IssueTable({
                 </>
               )}
               {showJob && <th className="max-md:hidden">Job ID</th>}
-              {showJob && <th className={jobName}>Job</th>}
               {showOwner && heading('Owner', 'owner', { first: 'asc' })}
               {heading('Amount', 'amount', { numeric: true })}
-              {!showResolution && heading('Follow up', 'follow_up', { first: 'asc' })}
-              <th className="num max-2xl:hidden">Notes</th>
               <th>
                 <span className="sr-only">Action</span>
               </th>
@@ -96,7 +89,6 @@ export function IssueTable({
             {issues.map((issue) => {
               const active = issue.status === 'open' || issue.status === 'assigned'
               const resolution = issue.resolution_note ?? 'No longer found in the source data'
-              const followUpDue = issue.follow_up_on !== null && issue.follow_up_on <= today
               return (
                 <tr key={issue.id} className="clickable" onClick={() => navigate(`/issues/${issue.id}`)}>
                   <td className="max-md:py-3 max-md:whitespace-normal!">
@@ -127,25 +119,8 @@ export function IssueTable({
                     </>
                   )}
                   {showJob && <td className="font-mono text-[0.8125rem] text-ink-2 max-md:hidden">{issue.job_number ?? ''}</td>}
-                  {showJob && (
-                    <td className={jobName}>
-                      {issue.job_name ? (
-                        <span className="block max-w-[14rem] truncate 2xl:max-w-[24rem]" title={issue.job_name}>
-                          {issue.job_name}
-                        </span>
-                      ) : (
-                        <span className="text-muted">No job</span>
-                      )}
-                    </td>
-                  )}
                   {showOwner && <td className="text-ink-2 max-md:hidden">{issue.owner}</td>}
                   <td className="num max-md:hidden">{Number(issue.amount) > 0 ? money(issue.amount) : ''}</td>
-                  {!showResolution && (
-                    <td className={`max-md:hidden ${followUpDue ? 'text-accent-ink' : 'text-ink-2'}`}>
-                      {issue.follow_up_on ? shortDate(issue.follow_up_on) : ''}
-                    </td>
-                  )}
-                  <td className="num max-2xl:hidden">{issue.note_count || ''}</td>
                   <td className="w-10 text-right max-md:pt-3 max-md:align-top">
                     <button
                       type="button"

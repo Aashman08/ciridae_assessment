@@ -18,6 +18,10 @@ Source lives in `backend/app/`:
 - `serializers.py` converts database models into API response models.
 - `connector.py` reads rows from the source systems.
 - `assistant.py` is Ask: the agent, its instructions and its fixed tools.
+- `coding.py` is the bill coder and `drafts.py` is the follow-up drafter. Each is one
+  agent with a typed reply that our code checks before it is returned.
+- `scheduler.py` runs a sync every `SYNC_EVERY_MINUTES`.
+- `evals/` holds scripts that score an agent against known answers using the real model.
 - `landing.py`, `normalize.py`, `financials.py` and `issues.py` are the four steps
   of a sync, in order.
 - `errors.py`, `exception_handlers.py` and `middleware.py` contain application
@@ -87,6 +91,14 @@ Run from `frontend/`:
   bubble on the right, the reply on the left, the input pinned at the bottom, a
   spinner while it works, and sources as a vertical list in a panel beside the
   conversation. It is the one screen with a reading-width column and a side panel.
+- **Ask AI** in the top bar opens the assistant pane (`components/AssistantPane.tsx`)
+  beside any page. The pane also shows a drafted follow-up or a bill-coding suggestion.
+  It docks as a third column at 2xl and slides over the page below that.
+- Page layouts inside `main` respond to the width they have (`@[58rem]:` container
+  variants), not the window, because the pane can take width away.
+- A list table shows only the columns needed to choose a row. Everything else goes on
+  the record's own page. Do not add a column that is empty on most rows.
+- Dropdowns use `Select` from `ui.tsx`, never a native `<select>`.
 - Content fills the window. Do not cap the page width; a cap leaves a dead band on
   wide monitors.
 - After changing a screen, open it in a browser at phone width, at 1440 and at

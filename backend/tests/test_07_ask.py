@@ -15,7 +15,7 @@ from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessa
 
 from app import assistant, database
 from app.errors import AskFailedError, AskNotConfiguredError
-from app.schemas import AskRequest
+from app.schemas import AskRequest, IssueFilters
 
 pytestmark = pytest.mark.usefixtures("synced")
 API = "/api/v1"
@@ -93,7 +93,7 @@ async def test_the_model_only_gets_the_fixed_tools(recon, model):
     scripted = model(say("Nothing to report."))
     await recon.ask(AskRequest(question="Anything?"))
     assert scripted.requests[0]["tools"] == [
-        "company_summary", "list_jobs", "get_job", "list_issues", "list_issue_types",
+        "company_summary", "list_jobs", "get_job", "list_issues", "get_issue", "list_issue_types",
         "list_invoices", "list_vendor_bills", "owed_by_customer", "totals_by_month",
     ]
     # Nothing that takes SQL, a table name or free text to run.
@@ -177,6 +177,42 @@ async def test_someone_who_sees_only_their_jobs_is_limited_whatever_the_model_as
     assert "No job found with number 'CTX00080002'" in other_job
     assert json.loads(summary)["cash"]["owed"] == "639700.00"
     assert "only sees their own jobs" in scripted.requests[0]["instructions"]
+
+
+async def test_ask_knows_which_page_it_was_opened_from(recon, api, model):
+    """Asked from a job's page, "this job" means that job. The page only points at
+    records; what the person may see is still decided by the tools."""
+    from app.schemas import AskPage
+
+    scripted = model(call("get_job", job_number="CTX00080002"), say("It has 4 open issues."))
+    await recon.ask(AskRequest(question="What is wrong with this job?", page=AskPage(kind="job", job_number="CTX00080002")))
+    assert 'has job CTX00080002 open. "This job" or "it" means that job' in scripted.requests[0]["instructions"]
+
+    issue_id = (await recon.list_issues(IssueFilters(owner=TASHA, limit=1))).data[0].id
+    scripted = model(call("get_issue", issue_id=issue_id), say("It is a past due invoice."))
+    result = await recon.ask(AskRequest(question="Explain this", owner=TASHA, page=AskPage(kind="issue", issue_id=issue_id)))
+    assert f"has issue {issue_id} open" in scripted.requests[0]["instructions"]
+    looked_up = json.loads(scripted.tool_results()[0])
+    assert looked_up["id"] == issue_id and looked_up["owner"] == TASHA and "history" in looked_up
+    assert [s.kind for s in result.sources if s.kind == "issue"] == ["issue"]
+
+    # Pointing at someone else's issue from the page does not get past the scope.
+    other = (await recon.list_issues(IssueFilters(owner="Ray Delgado", limit=1))).data[0].id
+    scripted = model(call("get_issue", issue_id=other), say("I cannot find that issue."))
+    await recon.ask(AskRequest(question="Explain this", owner=TASHA, page=AskPage(kind="issue", issue_id=other)))
+    assert f"No issue found with id {other}" in scripted.tool_results()[0] or "not found" in scripted.tool_results()[0].lower()
+
+    scripted = model(say("5 are unsent."))
+    await recon.ask(AskRequest(question="Summarise these", page=AskPage(kind="invoices", filters={"status": "DRAFT"})))
+    assert "looking at the list of customer invoices, filtered to status = DRAFT" in scripted.requests[0]["instructions"]
+
+    scripted = model(say("Hello."))
+    await recon.ask(AskRequest(question="Hello"))
+    assert "asking from the Ask page" in scripted.requests[0]["instructions"]
+
+    # The page cannot carry free text or SQL into the instructions.
+    for bad in ({"kind": "job", "job_number": "x; drop table"}, {"kind": "sql"}, {"kind": "jobs", "filters": {"q": "x" * 61}}):
+        assert (await api.post(f"{API}/ask", json={"question": "Hi", "page": bad})).status_code == 422
 
 
 async def test_a_conversation_is_saved_and_still_there_later(recon, model):
@@ -349,6 +385,205 @@ async def test_a_reply_outside_the_fixed_blocks_is_refused(recon, model):
         with pytest.raises(AskFailedError):
             await recon.ask(AskRequest(question="Draw it", asked_by=person))
     assert await recon.list_ask_history(person) == []
+
+
+def drafted(subject: str, body: str) -> ResponseOutputMessage:
+    """The model handing back a follow-up message."""
+    return ResponseOutputMessage(
+        id="msg_1", role="assistant", status="completed", type="message",
+        content=[ResponseOutputText(annotations=[], text=json.dumps({"subject": subject, "body": body}), type="output_text")],
+    )
+
+
+async def issue_about(api, document: str) -> dict:
+    issues = (await api.get(f"{API}/issues", params={"limit": 100})).json()["data"]
+    return next(i for i in issues if i["document"] == document)
+
+
+async def test_a_late_invoice_follow_up_goes_to_the_customers_billing_contact(api, model):
+    """Who it goes to and what it may say come from the records. The model only writes."""
+    issue = await issue_about(api, "INV-2026-0538")
+    scripted = model(drafted(
+        "Invoice INV-2026-0538, $246,300 past due",
+        "Hello,\n\nInvoice INV-2026-0538 for $246,300 was due on 14 July 2026. When will payment be made?\n\nTasha Green",
+    ))
+    response = await api.post(f"{API}/issues/{issue['id']}/draft", json={"writer": TASHA})
+    assert response.status_code == 200, response.text
+    draft = response.json()
+
+    assert draft["recipient"]["audience"] == "customer"
+    assert draft["recipient"]["role"] == "Billing contact at Northgate Independent School District"
+    assert draft["recipient"]["email"] and "@" in draft["recipient"]["email"]
+    assert (draft["subject"], draft["warnings"], draft["as_of"]) == ("Invoice INV-2026-0538, $246,300 past due", [], "2026-07-28")
+
+    # The model was given the facts and no tools, and told it is writing to someone outside.
+    request = scripted.requests[0]
+    assert request["tools"] == []
+    brief = json.loads(request["input"][0]["content"])
+    assert brief["writer"] == TASHA and brief["recipient"]["name"] == draft["recipient"]["name"]
+    assert (brief["facts"]["document"], brief["facts"]["amount"], brief["facts"]["days_late"]) == ("INV-2026-0538", "246300.00", 14)
+    assert brief["facts"]["records"][0]["unpaid"] == "246300.00"
+    assert "outside the company" in request["instructions"] and "28 July 2026" in request["instructions"]
+
+
+async def test_a_draft_with_a_figure_that_is_not_in_the_records_is_sent_back_then_flagged(api, model):
+    issue = await issue_about(api, "INV-2026-0538")
+    wrong = drafted("Invoice INV-2026-0538", "Invoice INV-2026-0538 for $250,000 is past due, plus a $500 late fee.")
+    right = drafted("Invoice INV-2026-0538", "Invoice INV-2026-0538 for $246,300 is past due.")
+
+    scripted = model(wrong, right)
+    fixed = (await api.post(f"{API}/issues/{issue['id']}/draft", json={"writer": TASHA})).json()
+    assert fixed["warnings"] == [] and "$246,300" in fixed["body"]
+    assert "$250,000 is not a figure from the records" in scripted.requests[-1]["input"][-1]["content"]
+
+    # Still wrong after one correction: it comes back, with what to check spelled out.
+    model(wrong)
+    flagged = (await api.post(f"{API}/issues/{issue['id']}/draft", json={"writer": TASHA})).json()
+    assert flagged["warnings"] == ["$250,000 is not a figure from the records", "$500 is not a figure from the records"]
+
+    model(drafted("Past due invoice", "Dear [Name], your invoice is past due."))
+    vague = (await api.post(f"{API}/issues/{issue['id']}/draft", json={"writer": TASHA})).json()
+    assert vague["warnings"] == [
+        "INV-2026-0538 is not named in the message", "A placeholder in brackets was left in the message",
+    ]
+
+
+async def test_other_follow_ups_stay_inside_the_company(api, model):
+    issue = await issue_about(api, "ARS-20447")  # an early-pay discount on one of Tasha's jobs
+    body = "Bill ARS-20447 for $48,350 needs approving before the discount deadline."
+
+    model(drafted("Bill ARS-20447", body))
+    from_owner = (await api.post(f"{API}/issues/{issue['id']}/draft", json={"writer": TASHA})).json()
+    assert from_owner["recipient"] == {
+        "audience": "internal", "name": "Finance", "role": "Harborstone's finance team", "email": None,
+    }
+
+    scripted = model(drafted("Bill ARS-20447", body))
+    from_finance = (await api.post(f"{API}/issues/{issue['id']}/draft", json={"writer": "Rachel Kim"})).json()
+    assert from_finance["recipient"] == {
+        "audience": "internal", "name": TASHA, "role": "Has this issue as the job's ops manager",
+        "email": "tasha.green@ciridae.com",
+    }
+    assert "colleague at Harborstone" in scripted.requests[0]["instructions"]
+
+
+async def test_drafting_needs_a_key_an_open_issue_and_an_issue_that_exists(api, model, monkeypatch):
+    issue = await issue_about(api, "INV-2026-0538")
+    assert (await api.post(f"{API}/issues/999999/draft", json={"writer": TASHA})).status_code == 404
+    assert (await api.post(f"{API}/issues/{issue['id']}/draft", json={})).status_code == 422
+
+    monkeypatch.setattr(database.settings, "openai_api_key", "")
+    refused = await api.post(f"{API}/issues/{issue['id']}/draft", json={"writer": TASHA})
+    assert (refused.status_code, refused.json()["error"]["type"]) == (503, "ask_not_configured")
+
+
+def coded(**reply) -> ResponseOutputMessage:
+    """The bill coder handing back its answer."""
+    body = {"job_number": None, "runner_up_job_number": None, "reasons": ["A line names the site."], **reply}
+    return ResponseOutputMessage(
+        id="msg_1", role="assistant", status="completed", type="message",
+        content=[ResponseOutputText(annotations=[], text=json.dumps(body), type="output_text")],
+    )
+
+
+async def test_the_bill_coder_never_sees_which_job_a_bill_is_on(recon, db, model):
+    """A bill whose job is known is put to the agent with that job hidden everywhere it
+    could look. That is what lets the same code be scored against real answers."""
+    from sqlalchemy import text
+
+    bill_id, actual = (
+        await db.execute(text(
+            "select l.id, j.job_number from recon.money_line l join recon.job j on j.id = l.job_id "
+            "where l.doc_number = 'LSR-88467'"
+        ))
+    ).one()
+    scripted = model(
+        call("the_bill"), call("vendor_history"), call("candidate_jobs"), call("job_work", job_number=actual),
+        coded(decision="job", job_number=actual, confidence="high", reasons=["The email subject names Pier 12."]),
+    )
+    suggestion = await recon.suggest_job(bill_id)
+
+    bill, history, jobs, work = (json.loads(result) for result in scripted.tool_results())
+    assert bill == {
+        "number": "LSR-88467", "vendor": "Lone Star Equipment Rental", "dated": "2026-07-17", "amount": "18930.00",
+        "lines": bill["lines"], "email_subject": "Invoice LSR-88467 — Pier 12 generator rental",
+    }
+    assert {line["description"] for line in bill["lines"]} == {"Generator 150kVA rental — 3 weeks", "Fuel service"}
+    assert "LSR-88467" not in json.dumps(history) + json.dumps(work)
+    assert [(h["number"], h["job_number"]) for h in history] == [("LSR-88412", "CTX00080002")]
+    assert len(jobs) == 25 and all("ops_manager" not in job for job in jobs)
+    assert work["cost_entries"] and "amount" in work["cost_entries"][0]
+
+    assert (suggestion.decision, suggestion.job_number, suggestion.confidence) == ("job", actual, "high")
+    assert suggestion.job_name == "Gulf Coast — Pier 12 Flood Mitigation"
+    assert [step.tool for step in suggestion.looked_at] == ["the_bill", "vendor_history", "candidate_jobs", "job_work"]
+    assert scripted.requests[0]["tools"] == ["the_bill", "vendor_history", "candidate_jobs", "job_work"]
+
+
+async def test_a_suggestion_is_recorded_on_the_issue_and_changes_nothing_else(api, db, model):
+    from sqlalchemy import text
+
+    issues = (await api.get(f"{API}/issues", params={"type": "no_job", "limit": 100})).json()["data"]
+    issue = next(i for i in issues if i["document"] == "DTL-10012")
+
+    model(call("the_bill"), coded(decision="job", job_number="MTX00100002", confidence="high", reasons=["A line names Bayou City Tower."]))
+    response = await api.post(f"{API}/issues/{issue['id']}/coding")
+    assert response.status_code == 200, response.text
+    suggestion = response.json()
+    assert (suggestion["bill"], suggestion["job_number"], suggestion["job_name"]) == (
+        "DTL-10012", "MTX00100002", "Bayou City — Floor 14 Moisture Remediation",
+    )
+
+    after = (await api.get(f"{API}/issues/{issue['id']}")).json()
+    assert after["status"] == "open"
+    assert (after["events"][-1]["kind"], after["events"][-1]["actor"]) == ("suggested", "assistant")
+    assert after["events"][-1]["note"] == (
+        "Suggested job MTX00100002 (Bayou City — Floor 14 Moisture Remediation), high confidence. A line names Bayou City Tower."
+    )
+    # The bill itself is untouched: it still has no job.
+    assert await db.scalar(text("select job_id from recon.money_line where doc_number = 'DTL-10012'")) is None
+
+
+async def test_the_bill_coder_says_when_it_is_not_sure(api, model):
+    issues = (await api.get(f"{API}/issues", params={"type": "no_job", "limit": 100})).json()["data"]
+    path = f"{API}/issues/{next(i for i in issues if i['document'] == 'DTL-9954')['id']}/coding"
+
+    model(coded(decision="not_a_job_cost", confidence="high", reasons=["The line is for branch offices."]))
+    overhead = (await api.post(path)).json()
+    assert (overhead["decision"], overhead["job_number"], overhead["runner_up"]) == ("not_a_job_cost", None, None)
+
+    # A job named with low confidence is a guess. It is shown as the closest fit, not as the answer.
+    model(coded(decision="job", job_number="MTX00040002", confidence="low"))
+    guess = (await api.post(path)).json()
+    assert (guess["decision"], guess["job_number"]) == ("unsure", None)
+    assert guess["runner_up"] == {"job_number": "MTX00040002", "job_name": "Caprock — Imaging Suite Mold Remediation"}
+
+    # A job that was never among the candidates is made up, and is refused outright.
+    model(coded(decision="job", job_number="ZZZ99999999", confidence="high"))
+    assert (await api.post(path)).status_code == 502
+    model(coded(decision="job", confidence="high"))
+    assert (await api.post(path)).status_code == 502
+
+    # Only an unassigned bill can be coded.
+    other = (await api.get(f"{API}/issues", params={"type": "past_due", "limit": 1})).json()["data"][0]
+    assert (await api.post(f"{API}/issues/{other['id']}/coding")).status_code == 400
+
+
+def test_the_scoring_counts_declining_to_guess_separately():
+    from evals.bill_coding import summary, verdict
+
+    assert verdict("job", "A", "A") == "right"
+    assert verdict("job", "B", "A") == "wrong"
+    assert verdict("not_a_job_cost", None, "A") == "wrong"
+    assert verdict("not_a_job_cost", None, None) == "right"
+    assert verdict("unsure", None, "A") == "unsure"
+    rows = [
+        {"verdict": "right", "confidence": "high"}, {"verdict": "right", "confidence": "medium"},
+        {"verdict": "wrong", "confidence": "high"}, {"verdict": "unsure", "confidence": "low"},
+    ]
+    assert summary(rows) == {
+        "bills": 4, "right": 2, "wrong": 1, "unsure": 1, "accuracy_when_it_answered": 0.667, "wrong_and_confident": 1,
+    }
 
 
 async def test_provider_problems_are_reported_as_what_they_are(recon, api, model, monkeypatch):

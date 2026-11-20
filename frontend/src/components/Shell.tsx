@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Check,
   ChevronRight,
@@ -15,11 +15,14 @@ import type { LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
+import { useAssistant } from '../lib/assistant'
 import { dateTime, longDate } from '../lib/format'
-import { useLatestSync, useRunSync } from '../lib/sync'
+import { cx } from '../lib/styles'
+import { useLatestSync } from '../lib/sync'
 import { useTheme } from '../lib/theme'
 import type { Theme } from '../lib/theme'
 import { useViewer, VIEWERS } from '../lib/viewer'
+import { AssistantPane } from './AssistantPane'
 import { Button, Segmented } from './ui'
 
 interface Section {
@@ -238,11 +241,23 @@ function Crumb() {
   )
 }
 
-function SyncControl() {
+/** When the figures are from, and the way into the assistant from any page. */
+function TopBarRight() {
+  const client = useQueryClient()
   const latest = useLatestSync()
-  const sync = useRunSync()
+  const { view, show, close } = useAssistant()
+  const { pathname } = useLocation()
   const run = latest.data
 
+  // Syncs run on a schedule. When a new one lands, everything on screen is out of date.
+  const seen = useRef<number | null>(null)
+  useEffect(() => {
+    if (!run) return
+    if (seen.current !== null && seen.current !== run.id) void client.invalidateQueries()
+    seen.current = run.id
+  }, [run, client])
+
+  const chatting = view?.kind === 'chat'
   return (
     <div className="flex items-center gap-4">
       {run && (
@@ -252,28 +267,41 @@ function SyncControl() {
           Last synced {dateTime(run.finished_at ?? run.started_at)}
         </p>
       )}
-      <Button disabled={sync.isPending} onClick={() => sync.mutate()}>
-        {sync.isPending ? 'Syncing' : 'Sync now'}
-      </Button>
+      {/* The Ask page is the assistant already. */}
+      {pathname !== '/ask' && (
+        <Button aria-pressed={chatting} onClick={() => (chatting ? close() : show({ kind: 'chat' }))}>
+          <MessageCircleQuestion {...ICON} />
+          Ask AI
+        </Button>
+      )}
     </div>
   )
 }
 
 export function Shell() {
   const { pathname } = useLocation()
+  const { view } = useAssistant()
   return (
-    <div className="grid min-h-full grid-cols-1 md:grid-cols-[15.5rem_minmax(0,1fr)]">
+    // The assistant's pane takes a third column on a wide screen and slides over the page on a narrower one,
+    // where a third column would squeeze the page until its tables no longer fit.
+    <div
+      className={cx(
+        'grid min-h-full grid-cols-1',
+        view ? 'md:grid-cols-[15.5rem_minmax(0,1fr)] 2xl:grid-cols-[15.5rem_minmax(0,1fr)_26rem]' : 'md:grid-cols-[15.5rem_minmax(0,1fr)]',
+      )}
+    >
       <Sidebar />
       <div className="flex min-w-0 flex-col">
         <header className="flex h-14 items-center justify-between gap-4 border-b border-hair px-4 md:px-6">
           <Crumb />
-          <SyncControl />
+          <TopBarRight />
         </header>
         {/* Keyed on the path so the short entrance plays once per page, not on every refetch. */}
-        <main key={pathname} className="flex w-full animate-rise flex-col gap-6 px-4 pt-6 pb-12 md:px-6 md:pt-8 md:pb-16 2xl:px-8">
+        <main key={pathname} className="@container flex w-full animate-rise flex-col gap-6 px-4 pt-6 pb-12 md:px-6 md:pt-8 md:pb-16 2xl:px-8">
           <Outlet />
         </main>
       </div>
+      <AssistantPane />
     </div>
   )
 }

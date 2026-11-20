@@ -3,7 +3,14 @@ import { api } from './api'
 
 /** The most recent sync, if there has been one. */
 export function useLatestSync() {
-  return useQuery({ queryKey: ['latest-sync'], queryFn: api.latestSync, select: (page) => page.data[0] ?? null })
+  return useQuery({
+    queryKey: ['latest-sync'],
+    queryFn: api.latestSync,
+    select: (page) => page.data[0] ?? null,
+    // Syncs run on a schedule on the server, so look once a minute for a new one.
+    refetchInterval: 60_000,
+    staleTime: 0,
+  })
 }
 
 /** Runs a sync, then refetches everything on screen, since any figure may have changed. */

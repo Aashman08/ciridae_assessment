@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     # Leave empty to use the OpenAI Agents SDK's default model.
     ask_model: str | None = None
+    # How often the source systems are read. 0 turns the schedule off; a sync can
+    # still be started with POST /api/v1/sync-runs.
+    sync_every_minutes: int = 60
 
 
 settings = Settings()

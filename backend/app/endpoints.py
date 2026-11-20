@@ -16,6 +16,9 @@ from app.schemas import (
     IssueDetailResponse,
     IssueFilters,
     IssueResponse,
+    CodingResponse,
+    DraftRequest,
+    DraftResponse,
     IssueTypeResponse,
     PersonResponse,
     IssueTypeUpdate,
@@ -236,6 +239,30 @@ async def get_issue(issue_id: int, request: Request) -> IssueDetailResponse:
 async def act_on_issue(issue_id: int, payload: IssueAction, request: Request) -> IssueDetailResponse:
     async with create_recon_client(request.state.request_id) as client:
         return await client.act_on_issue(issue_id, payload)
+
+
+@router.post(
+    "/issues/{issue_id}/draft",
+    tags=["Issues"],
+    summary="Draft a follow-up message about an issue. Nothing is sent",
+    response_model=DraftResponse,
+    responses={404: ERROR_404, 409: ERROR_409},
+)
+async def draft_follow_up(issue_id: int, payload: DraftRequest, request: Request) -> DraftResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.draft_follow_up(issue_id, payload)
+
+
+@router.post(
+    "/issues/{issue_id}/coding",
+    tags=["Issues"],
+    summary="Suggest which job an unassigned vendor bill belongs to. Nothing is changed",
+    response_model=CodingResponse,
+    responses={400: ERROR_400, 404: ERROR_404, 409: ERROR_409},
+)
+async def suggest_job_for_issue(issue_id: int, request: Request) -> CodingResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.suggest_job_for_issue(issue_id)
 
 
 @router.get("/people", tags=["Issues"], summary="Who an issue can be assigned to", response_model=list[PersonResponse])

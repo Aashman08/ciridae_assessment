@@ -394,10 +394,29 @@ class AskMessage(BaseModel):
     content: str = Field(min_length=1, max_length=8000)
 
 
+class AskPage(BaseModel):
+    """What the person has on screen when they ask, so "this job" means something.
+    It only points at things. The tools still decide what the person may see."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["overview", "jobs", "job", "issues", "issue", "invoices", "bills", "issue_types"]
+    job_number: str | None = Field(None, pattern=r"^[A-Za-z0-9]{1,20}$")
+    issue_id: int | None = Field(None, ge=1)
+    filters: dict[str, str] = Field(default_factory=dict, description="The list filters in force, such as status or type")
+
+    @model_validator(mode="after")
+    def filters_are_small(self) -> "AskPage":
+        if len(self.filters) > 8 or any(len(k) > 20 or len(v) > 60 for k, v in self.filters.items()):
+            raise ValueError("too many filters, or a filter that is too long")
+        return self
+
+
 class AskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     question: str = Field(min_length=1, max_length=1000)
+    page: AskPage | None = Field(None, description="The page the person is asking from")
     asked_by: str = Field("anonymous", min_length=1, max_length=120, description="Who is asking. Their conversation is kept under this name")
     owner: str | None = Field(None, description="Limit every answer to one ops manager's jobs")
 
@@ -496,6 +515,72 @@ class AskAnswer(BaseModel):
     as_of: date
 
 
+# --- Bill coding ---------------------------------------------------------------
+
+
+class CodingReply(BaseModel):
+    """What the model must hand back about one bill."""
+
+    decision: Literal["job", "not_a_job_cost", "unsure"]
+    job_number: str | None = Field(description="The job, when the decision is job. Otherwise empty")
+    confidence: Literal["high", "medium", "low"]
+    reasons: list[str] = Field(min_length=1, max_length=4, description="The evidence, one short sentence each")
+    runner_up_job_number: str | None = Field(description="Another job that came close, if any")
+
+
+class CodingRunnerUp(BaseModel):
+    job_number: str
+    job_name: str
+
+
+class CodingResponse(BaseModel):
+    """A suggestion for a person to accept or reject. Nothing is changed by it."""
+
+    bill: str
+    decision: Literal["job", "not_a_job_cost", "unsure"]
+    job_number: str | None
+    job_name: str | None
+    confidence: Literal["high", "medium", "low"]
+    reasons: list[str]
+    runner_up: CodingRunnerUp | None
+    looked_at: list["AskStep"] = Field(description="Each lookup the agent used, in order")
+
+
+# --- Follow-up drafts ------------------------------------------------------------
+
+
+class DraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    writer: str = Field(min_length=1, max_length=120, description="Who will send the message. It is signed with their name")
+
+
+class Recipient(BaseModel):
+    """Who a follow-up goes to. Chosen from the records by fixed rules, never by the model."""
+
+    audience: Literal["customer", "internal"]
+    name: str
+    role: str = Field(description="Why they are the person to write to")
+    email: str | None = Field(description="None when the records hold no address for them")
+
+
+class DraftReply(BaseModel):
+    """What the model must hand back: the two parts of a message and nothing else."""
+
+    subject: str = Field(min_length=1, max_length=160)
+    body: str = Field(min_length=1, max_length=2400)
+
+
+class DraftResponse(BaseModel):
+    """A message for a person to read, change and send themselves. The app sends nothing."""
+
+    recipient: Recipient
+    subject: str
+    body: str
+    warnings: list[str] = Field(description="Things to check before sending, such as a figure that is not in the records")
+    as_of: date
+
+
 class AskResponse(BaseModel):
     """A saved exchange: the question, its answer, and when it was asked."""
 
@@ -511,3 +596,6 @@ class AskResponse(BaseModel):
     question: str
     asked_by: str
     created_at: datetime
+
+
+CodingResponse.model_rebuild()

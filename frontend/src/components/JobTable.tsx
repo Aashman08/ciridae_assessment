@@ -5,7 +5,8 @@ import { Empty, SortHeader } from './ui'
 
 interface JobTableProps {
   jobs: JobSummary[]
-  /** The full table shows what each job earned. The short one names the biggest issue instead. */
+  /** The full table shows what each job earned. The short one shows what it is owed and its biggest issue.
+   *  Everything else about a job is on its own page. */
   full?: boolean
   /** Hidden when every row would name the same person. */
   showOwner?: boolean
@@ -41,16 +42,13 @@ export function JobTable({ jobs, full = false, showOwner = true, sorting }: JobT
           <tr>
             {heading('Job ID', 'job_number', { first: 'asc' })}
             {heading('Job', 'name', { first: 'asc' })}
-            {full && <th className="max-2xl:hidden">Stage</th>}
+            {full && <th>Stage</th>}
             {showOwner && <th>Ops manager</th>}
-            {full && heading('Contract', 'contract', { numeric: true, className: 'max-2xl:hidden' })}
             {full && heading('Revenue', 'revenue', { numeric: true })}
-            {full && <th className="num">Cost, ops log</th>}
-            {full && heading('Cost, ledger', 'cost', { numeric: true })}
+            {full && heading('Cost', 'cost', { numeric: true })}
             {full && heading('Profit', 'profit', { numeric: true })}
             {full && heading('Margin', 'margin', { numeric: true })}
-            {full && heading('Planned', 'planned_margin', { numeric: true })}
-            {heading('Owed', 'owed', { numeric: true, className: full ? 'max-2xl:hidden' : undefined })}
+            {!full && heading('Owed', 'owed', { numeric: true })}
             {heading('Issues', 'issues', { numeric: true })}
             {!full && <th>Biggest issue</th>}
           </tr>
@@ -63,20 +61,18 @@ export function JobTable({ jobs, full = false, showOwner = true, sorting }: JobT
                 {/* The link makes the row reachable by keyboard; the row click is a convenience. */}
                 <Link
                   to={`/jobs/${job.job_number}`}
-                  className={`block truncate 2xl:max-w-[30rem] ${full ? 'max-w-[12rem]' : 'max-w-[22.5rem]'}`}
+                  className={`block truncate ${full ? 'max-w-[16rem] @[80rem]:max-w-[30rem]' : 'max-w-[22.5rem]'}`}
                   title={job.name}
                   onClick={(e) => e.stopPropagation()}
                 >
                   {job.name}
                 </Link>
               </td>
-              {full && <td className="text-ink-2 max-2xl:hidden">{stage(job.stage)}</td>}
+              {full && <td className="text-ink-2">{stage(job.stage)}</td>}
               {showOwner && (
                 <td className={job.ops_manager ? 'text-ink-2' : 'text-accent-ink'}>{job.ops_manager ?? 'None assigned'}</td>
               )}
-              {full && <td className="num max-2xl:hidden">{money(job.contract_value)}</td>}
               {full && <td className="num">{amount(job.ledger_revenue)}</td>}
-              {full && <td className="num">{amount(job.ops_cost)}</td>}
               {full && <td className="num">{amount(job.ledger_cost)}</td>}
               {full && (
                 <td className={`num ${Number(job.ledger_profit) < 0 ? 'text-neg' : ''}`}>{amount(job.ledger_profit)}</td>
@@ -84,8 +80,7 @@ export function JobTable({ jobs, full = false, showOwner = true, sorting }: JobT
               {full && (
                 <td className={`num ${belowPlan(job) ? 'text-accent-ink' : ''}`}>{percent(job.ledger_margin_pct)}</td>
               )}
-              {full && <td className="num text-ink-2">{percent(job.planned_margin_pct)}</td>}
-              <td className={`num ${full ? 'max-2xl:hidden' : ''}`}>{amount(job.owed)}</td>
+              {!full && <td className="num">{amount(job.owed)}</td>}
               <td className="num">{job.issue_count || ''}</td>
               {!full && (
                 <td className="text-ink-2">

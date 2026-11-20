@@ -6,6 +6,7 @@ import { Button, Card, Loaded, PageHead } from '../components/ui'
 import { api } from '../lib/api'
 import type { IssueType } from '../lib/api'
 import { money } from '../lib/format'
+import { useRunSync } from '../lib/sync'
 
 /** A tolerance is stored as a ratio (0.02) or as dollars (1). Show it the way people say it. */
 function shown(type: IssueType): string {
@@ -99,6 +100,7 @@ function Switch({ type }: { type: IssueType }) {
 
 export function IssueTypes() {
   const types = useQuery({ queryKey: ['issue-types'], queryFn: api.issueTypes })
+  const sync = useRunSync()
 
   return (
     <>
@@ -106,7 +108,12 @@ export function IssueTypes() {
         title="Issue types"
         aside={types.data?.length}
         sub="Each type is one way the three systems can disagree about a job. Changes take effect on the next sync"
-      />
+      >
+        {/* Syncs run on a schedule. This is for seeing the effect of a change straight away. */}
+        <Button disabled={sync.isPending} onClick={() => sync.mutate()}>
+          {sync.isPending ? 'Syncing' : 'Sync now'}
+        </Button>
+      </PageHead>
       <Card>
         <Loaded query={types}>
           {(data) => (

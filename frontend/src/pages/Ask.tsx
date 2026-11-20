@@ -1,41 +1,13 @@
-import { useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, ChevronDown, FileText, HardHat, LoaderCircle, Receipt, TriangleAlert, X } from 'lucide-react'
+import { ChevronDown, FileText, HardHat, Receipt, TriangleAlert, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AnswerView } from '../components/AnswerView'
-import { Button, ErrorNote } from '../components/ui'
-import { api, ApiError } from '../lib/api'
-import type { AskResponse, AskSource, AskStep } from '../lib/api'
-import { dateTime, longDate } from '../lib/format'
+import { Composer, Messages } from '../components/Conversation'
+import { Button } from '../components/ui'
+import type { AskResponse, AskSource } from '../lib/api'
+import { sourceLink, suggestionsFor } from '../lib/assistant'
+import { useConversation } from '../lib/conversation'
 import { useViewer } from '../lib/viewer'
-
-// What each fixed tool does, in the words a reader would use.
-const STEPS: Record<string, string> = {
-  company_summary: 'Read the totals',
-  list_jobs: 'Listed jobs',
-  get_job: 'Opened a job',
-  list_issues: 'Listed issues',
-  list_issue_types: 'Read what each issue type means',
-  list_invoices: 'Listed customer invoices',
-  list_vendor_bills: 'Listed vendor bills',
-  owed_by_customer: 'Totalled what each customer owes',
-  totals_by_month: 'Totalled invoices or bills by month',
-}
-
-const EVERY_JOB = [
-  'Which customers owe us the most, and how much of it is past due?',
-  'Which closed jobs still have unpaid vendor bills?',
-  'What did the Redbird dock rebuild make, by ledger and by ops log cost?',
-  'Which invoices have been approved but never sent?',
-]
-const OWN_JOBS = [
-  'What should I chase first?',
-  'Which of my jobs have costs that disagree between ops and the ledger?',
-  'Which bills are waiting on me, and do any have a discount deadline?',
-  'How much do customers owe on my jobs?',
-]
 
 const ICON = { size: '1rem', strokeWidth: 1.5, 'aria-hidden': true } as const
 
@@ -46,12 +18,6 @@ const SOURCE_KINDS: Record<AskSource['kind'], { icon: LucideIcon; name: string }
   issue: { icon: TriangleAlert, name: 'Issue' },
   invoice: { icon: Receipt, name: 'Customer invoice' },
   vendor_bill: { icon: FileText, name: 'Vendor bill' },
-}
-
-function sourceLink(source: AskSource): string | null {
-  if (source.kind === 'issue') return `/issues/${source.id}`
-  // An invoice or bill opens the job it belongs to. One with no job has nowhere to go.
-  return source.id ? `/jobs/${source.id}` : null
 }
 
 /** A source's two lines: what it is called, then what kind of record it is and its number. */
@@ -154,148 +120,13 @@ function Sources({ sources, onClose, className }: { sources: AskSource[]; onClos
   )
 }
 
-function Inputs({ step }: { step: AskStep }) {
-  const entries = Object.entries(step.arguments)
-  if (entries.length === 0) return null
-  return <span className="font-mono text-xs text-muted"> {entries.map(([key, value]) => `${key}: ${String(value)}`).join(', ')}</span>
-}
-
-/** Shown wherever work is actually in progress, and nowhere else. */
-function Working({ label }: { label: string }) {
-  return (
-    <p role="status" className="flex items-center gap-2 text-ink-2">
-      <LoaderCircle {...ICON} className="animate-spin" />
-      {label}
-    </p>
-  )
-}
-
-/** What the person typed: a bubble on the right, as in any chat. */
-function Question({ text, askedAt }: { text: string; askedAt?: string }) {
-  return (
-    <div className="flex justify-end">
-      <p
-        className="max-w-[85%] rounded-2xl rounded-br-md bg-raised px-4 py-2 whitespace-pre-wrap ring-1 ring-hair ring-inset"
-        title={askedAt ? dateTime(askedAt) : undefined}
-      >
-        {text}
-      </p>
-    </div>
-  )
-}
-
-/** What came back: plain text on the left, with how it was worked out underneath. */
-function Answer({ response }: { response: AskResponse }) {
-  // A table row that names one of the answer's sources opens it.
-  const links: Record<string, string> = {}
-  for (const source of response.sources) {
-    const to = sourceLink(source)
-    if (to && source.kind !== 'issue') links[source.kind === 'job' ? source.id : source.label] = to
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <AnswerView spec={response.spec} links={links} />
-
-      {response.worked_out.length > 0 && (
-        <p className="text-[0.8125rem] text-ink-2">
-          Calculated by the assistant from the figures it looked up, not read directly from the data:{' '}
-          <span className="font-mono text-xs text-accent-ink">{response.worked_out.join('  ')}</span>
-        </p>
-      )}
-
-      {/* The reader can see exactly which fixed lookups produced the answer. */}
-      <details className="text-[0.8125rem] text-ink-2">
-        <summary className="cursor-pointer text-xs leading-4 text-muted">
-          {response.steps.length} {response.steps.length === 1 ? 'lookup' : 'lookups'}, {response.sources.length}{' '}
-          {response.sources.length === 1 ? 'source' : 'sources'}, figures as of {longDate(response.as_of)}
-        </summary>
-        {response.steps.length === 0 ? (
-          <p className="pt-2">No lookup was needed, so this answer contains no figures from the data</p>
-        ) : (
-          <ol className="flex flex-col gap-1 pt-2">
-            {response.steps.map((step, index) => (
-              <li key={index}>
-                {STEPS[step.tool] ?? step.tool}
-                <Inputs step={step} />
-              </li>
-            ))}
-          </ol>
-        )}
-      </details>
-    </div>
-  )
-}
-
+/** The assistant on a page of its own, with the records its answers rest on beside it. */
 export function Ask() {
   const { viewer } = useViewer()
-  const client = useQueryClient()
-  const [draft, setDraft] = useState('')
-  const end = useRef<HTMLDivElement>(null)
+  const conversation = useConversation()
   const [sourcesOpen, toggleSources] = useSourcesOpen()
-
-  const historyKey = ['ask-history', viewer.name]
-  const askKey = ['ask', viewer.name]
-
-  // The conversation is kept on the server, per person, so it is still here
-  // after changing page, reloading, or coming back tomorrow.
-  const history = useQuery({ queryKey: historyKey, queryFn: () => api.askHistory(viewer.name) })
-
-  const ask = useMutation({
-    mutationKey: askKey,
-    mutationFn: (question: string) => api.ask({ question, asked_by: viewer.name, owner: viewer.owner }),
-    // Runs even if this page has been left, so the answer is waiting on return.
-    onSuccess: () => client.invalidateQueries({ queryKey: historyKey }),
-  })
-
-  // Questions still being answered, and ones that failed, read from the shared
-  // cache and not from this component. That is what lets a question outlive the page.
-  const waiting = useMutationState({
-    filters: { mutationKey: askKey, status: 'pending' },
-    select: (mutation) => ({ id: mutation.mutationId, question: mutation.state.variables as string }),
-  })
-  const failed = useMutationState({
-    filters: { mutationKey: askKey, status: 'error' },
-    select: (mutation) => ({
-      id: mutation.mutationId,
-      question: mutation.state.variables as string,
-      error: mutation.state.error instanceof ApiError ? mutation.state.error.message : 'The question could not be sent.',
-    }),
-  })
-
-  const clear = useMutation({
-    mutationFn: () => api.clearAskHistory(viewer.name),
-    onSuccess: () => {
-      const cache = client.getMutationCache()
-      cache.findAll({ mutationKey: askKey }).forEach((mutation) => cache.remove(mutation))
-      return client.invalidateQueries({ queryKey: historyKey })
-    },
-  })
-
-  const busy = waiting.length > 0
-
-  function send(question: string) {
-    const text = question.trim()
-    if (!text || busy) return
-    setDraft('')
-    ask.mutate(text)
-  }
-
-  function submit(event: FormEvent) {
-    event.preventDefault()
-    send(draft)
-  }
-
-  const saved = history.data ?? []
-  const count = saved.length + failed.length + waiting.length
+  const { saved, failed, busy, count, clear } = conversation
   const sources = conversationSources(saved)
-
-  // Keep the newest message in view as the conversation grows.
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: 'end' })
-  }, [count])
-
-  const suggestions = viewer.owner ? OWN_JOBS : EVERY_JOB
 
   return (
     // The conversation has the page to itself, in a reading-width column as chat does.
@@ -334,75 +165,12 @@ export function Ask() {
         {/* On a narrow window there is no room beside the conversation, so the sources open under the button. */}
         {sourcesOpen && <Sources sources={sources} onClose={toggleSources} className="mb-6 xl:hidden" />}
 
-        <div className="flex flex-1 flex-col gap-6">
-          {history.isPending ? (
-            <Working label="Loading your conversation" />
-          ) : history.isError ? (
-            <ErrorNote error={history.error} />
-          ) : count === 0 ? (
-            <div className="flex flex-col gap-3">
-              <p className="text-ink-2">Try one of these, or type your own below</p>
-              <ul className="flex flex-col items-start gap-2">
-                {suggestions.map((question) => (
-                  <li key={question}>
-                    <Button className="h-auto! py-2 text-left whitespace-normal!" onClick={() => send(question)}>
-                      {question}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <>
-              {saved.map((exchange) => (
-                <div key={exchange.id} className="flex flex-col gap-4">
-                  <Question text={exchange.question} askedAt={exchange.created_at} />
-                  <Answer response={exchange} />
-                </div>
-              ))}
-              {failed.map((attempt) => (
-                <div key={`failed-${attempt.id}`} className="flex flex-col gap-4">
-                  <Question text={attempt.question} />
-                  <p className="text-ink-2">{attempt.error}</p>
-                </div>
-              ))}
-              {waiting.map((attempt) => (
-                <div key={`waiting-${attempt.id}`} className="flex flex-col gap-4">
-                  <Question text={attempt.question} />
-                  <Working label="Looking this up in your data" />
-                </div>
-              ))}
-            </>
-          )}
-          <div ref={end} />
-        </div>
-
-        {/* The composer stays at the bottom of the window, however long the conversation gets. */}
-        <form onSubmit={submit} className="sticky bottom-0 z-20 mt-6 bg-bg pt-2 pb-4">
-          <div className="flex items-center gap-2 rounded-2xl border border-hair bg-card p-2 shadow-lift">
-            <label htmlFor="ask-question" className="sr-only">
-              Your question
-            </label>
-            <input
-              id="ask-question"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              maxLength={1000}
-              autoComplete="off"
-              placeholder="Ask about jobs, invoices, bills or issues"
-              className="h-8 min-w-0 flex-1 bg-transparent px-2 outline-none placeholder:text-muted"
-            />
-            <Button
-              variant="primary"
-              type="submit"
-              className="size-8 rounded-full! px-0!"
-              aria-label={busy ? 'Working' : 'Send'}
-              disabled={!draft.trim() || busy}
-            >
-              {busy ? <LoaderCircle {...ICON} className="animate-spin" /> : <ArrowUp {...ICON} />}
-            </Button>
-          </div>
-        </form>
+        <Messages
+          conversation={conversation}
+          suggestions={suggestionsFor({ kind: 'overview' }, Boolean(viewer.owner))}
+          onSuggest={(question) => conversation.send(question)}
+        />
+        <Composer conversation={conversation} className="sticky bottom-0 z-20 mt-6 pt-2 pb-4" />
       </div>
 
       {sourcesOpen && <Sources sources={sources} onClose={toggleSources} className="sticky top-6 hidden xl:block" />}

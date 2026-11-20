@@ -52,13 +52,6 @@ export function dateTime(isoTimestamp: string): string {
   })
 }
 
-/** Today's date as the API writes dates, in this reader's own time zone. */
-export function isoToday(): string {
-  const now = new Date()
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-}
-
 export function daysBetween(laterIso: string, earlierIso: string): number {
   return Math.round((parse(laterIso).getTime() - parse(earlierIso).getTime()) / 86_400_000)
 }

@@ -251,6 +251,36 @@ export interface AskResponse {
   as_of: string
 }
 
+/** What the person has on screen when they ask, so "this job" means something. */
+export interface AskPage {
+  kind: 'overview' | 'jobs' | 'job' | 'issues' | 'issue' | 'invoices' | 'bills' | 'issue_types'
+  job_number?: string
+  issue_id?: number
+  filters?: Record<string, string>
+}
+
+/** A follow-up message for a person to read, change and send themselves. */
+export interface Draft {
+  recipient: { audience: 'customer' | 'internal'; name: string; role: string; email: string | null }
+  subject: string
+  body: string
+  /** Things to check before sending, such as a figure that is not in the records. */
+  warnings: string[]
+  as_of: string
+}
+
+/** A suggestion for which job an unassigned vendor bill belongs to. */
+export interface Coding {
+  bill: string
+  decision: 'job' | 'not_a_job_cost' | 'unsure'
+  job_number: string | null
+  job_name: string | null
+  confidence: 'high' | 'medium' | 'low'
+  reasons: string[]
+  runner_up: { job_number: string; job_name: string } | null
+  looked_at: AskStep[]
+}
+
 export interface SourceRecord {
   id: number
   system: string
@@ -354,7 +384,9 @@ export const api = {
   latestSync: () => request<ListResponse<SyncRun>>('/sync-runs?limit=1'),
   runSync: () => post<SyncRun>('/sync-runs'),
 
-  ask: (body: { question: string; asked_by: string; owner?: string }) => post<AskResponse>('/ask', body),
+  ask: (body: { question: string; asked_by: string; owner?: string; page?: AskPage }) => post<AskResponse>('/ask', body),
+  draftFollowUp: (issueId: number, writer: string) => post<Draft>(`/issues/${issueId}/draft`, { writer }),
+  suggestJob: (issueId: number) => post<Coding>(`/issues/${issueId}/coding`),
   askHistory: (askedBy: string) => request<AskResponse[]>(`/ask/history${query({ asked_by: askedBy })}`),
   clearAskHistory: (askedBy: string) => request<void>(`/ask/history${query({ asked_by: askedBy })}`, { method: 'DELETE' }),
 

@@ -5,27 +5,31 @@ transaction for one request, and calls the pipeline steps and serializers.
 """
 
 from collections import defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import TypeVar
 
 from sqlalchemy import and_, case, delete, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
+import json
 import logging
 
 from agents.exceptions import AgentsException
 from openai import APIStatusError, AuthenticationError, OpenAIError, RateLimitError
 
-from app import assistant, database
+from app import assistant, coding, database, drafts
+from app.coding import CodingCase
 from app.connector import Connector, ExportConnector
 from app.errors import (
     AskFailedError,
     AskNotConfiguredError,
     AskProviderError,
     InvalidRequestError,
+    InvalidStateError,
     IssueNotFoundError,
     IssueTypeNotFoundError,
     JobNotFoundError,
@@ -40,6 +44,7 @@ from app.models import (
     AskExchange,
     Company,
     Issue,
+    IssueEvent,
     IssueEvidence,
     IssueType,
     Job,
@@ -55,9 +60,13 @@ from app.schemas import (
     AskRequest,
     AskResponse,
     CashSummary,
+    CodingResponse,
     CountedOnce,
     CustomerBalance,
+    DraftRequest,
+    DraftResponse,
     PersonResponse,
+    Recipient,
     MonthTotal,
     ContractToCash,
     IssueAction,
@@ -89,6 +98,8 @@ from app.serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 # What every issue read loads: its type, and its job with the people on it, which
 # says why the issue's owner has it.
@@ -540,12 +551,32 @@ class ReconClient:
     async def ask(self, payload: AskRequest) -> AskResponse:
         """Answer a question in plain words, using only the fixed tools in `assistant`,
         and save the exchange so the conversation is still there later."""
-        if not assistant.is_configured():
-            raise AskNotConfiguredError()
         run = await self._current_run()
         history = await self._recent_conversation(payload.asked_by)
+        answer = await self._with_model(assistant.answer(self, payload, run.as_of, history))
+
+        # Only a finished answer is kept. A failed question leaves no trace in the conversation.
+        exchange = AskExchange(
+            asked_by=payload.asked_by,
+            owner=payload.owner,
+            question=payload.question,
+            **answer.model_dump(mode="json", exclude={"as_of"}),
+            as_of=answer.as_of,
+        )
+        self.db.add(exchange)
+        await self.db.commit()
+        return ask_response(exchange)
+
+    async def _with_model(self, work: Awaitable[T]) -> T:
+        """Run something that calls the model, turning the provider's failures into
+        errors that say what is actually wrong."""
+        if not assistant.is_configured():
+            close = getattr(work, "close", None)
+            if close:
+                close()
+            raise AskNotConfiguredError()
         try:
-            answer = await assistant.answer(self, payload, run.as_of, history)
+            return await work
         except AuthenticationError as exc:
             logger.warning("Ask: OpenAI rejected the API key request_id=%s", self.request_id)
             raise AskProviderError("OpenAI rejected the API key. Check OPENAI_API_KEY in backend/.env.") from exc
@@ -559,17 +590,205 @@ class ReconClient:
             logger.warning("Ask failed request_id=%s: %s: %s", self.request_id, type(exc).__name__, exc)
             raise AskFailedError() from exc
 
-        # Only a finished answer is kept. A failed question leaves no trace in the conversation.
-        exchange = AskExchange(
-            asked_by=payload.asked_by,
-            owner=payload.owner,
-            question=payload.question,
-            **answer.model_dump(mode="json", exclude={"as_of"}),
-            as_of=answer.as_of,
-        )
-        self.db.add(exchange)
+    # --- Follow-up drafts --------------------------------------------------------
+
+    async def draft_follow_up(self, issue_id: int, payload: DraftRequest) -> DraftResponse:
+        """Draft a message about an issue for a person to send themselves. Who it goes
+        to and every fact in it come from the records; the model only writes the words."""
+        run = await self._current_run()
+        issue = await self._issue_detail(issue_id)
+        if issue.status not in ACTIVE:
+            raise InvalidStateError(f"A {issue.status} issue needs no follow-up. Reopen it first.")
+        recipient = await self._recipient(issue, payload.writer)
+        facts = {
+            "problem": issue.title,
+            "what_is_wrong": issue.detail,
+            "suggested_next_step": issue.next_step,
+            "job": issue.job_name,
+            "job_number": issue.job_number,
+            "document": issue.document,
+            "amount": issue.amount,
+            "due_on": issue.due_on,
+            "days_late": issue.days_late,
+            "records": [
+                {
+                    "number": line.doc_number, "company": line.company, "amount": line.amount, "paid": line.paid_amount,
+                    "unpaid": line.open_amount, "dated": line.line_date, "due": line.due_date, "status": line.status,
+                }
+                for line in issue.evidence
+                if line.kind in (INVOICE, BILL)
+            ],
+            "notes_so_far": [
+                {"by": event.actor, "on": event.created_at.date(), "note": event.note}
+                for event in issue.events
+                if event.kind == "commented"
+            ],
+        }
+        facts = json.loads(json.dumps(facts, default=str))
+        return await self._with_model(drafts.write(facts, payload.writer, recipient, issue.document, run.as_of))
+
+    # --- Bill coding ---------------------------------------------------------------
+
+    async def suggest_job_for_issue(self, issue_id: int) -> CodingResponse:
+        """Suggest which job an unassigned vendor bill belongs to. The suggestion is
+        recorded in the issue's history; accepting or rejecting it is the person's call."""
+        issue = await self._issue(issue_id)
+        if issue.type_key != "no_job" or not issue.evidence:
+            raise InvalidRequestError("Only a vendor bill with no job can be coded.")
+        if issue.status not in ACTIVE:
+            raise InvalidStateError(f"A {issue.status} issue needs no coding. Reopen it first.")
+        suggestion = await self.suggest_job(issue.evidence[0].money_line_id)
+
+        said = {
+            "job": f"Suggested job {suggestion.job_number} ({suggestion.job_name}), {suggestion.confidence} confidence",
+            "not_a_job_cost": f"Suggested this is not a job cost, {suggestion.confidence} confidence",
+            "unsure": "Could not tell which job this belongs to"
+            + (f"; the closest is {suggestion.runner_up.job_number}" if suggestion.runner_up else ""),
+        }[suggestion.decision]
+        self.db.add(IssueEvent(issue_id=issue.id, kind="suggested", actor="assistant", note=f"{said}. {' '.join(suggestion.reasons)}"))
         await self.db.commit()
-        return ask_response(exchange)
+        return suggestion
+
+    async def suggest_job(self, bill_line_id: int) -> CodingResponse:
+        """Run the bill coder on one vendor bill, whether or not it already has a job.
+        The agent is never shown that job, so a bill whose job is known can be used to score it."""
+        return await self._with_model(coding.suggest(await self._coding_case(bill_line_id)))
+
+    async def _coding_case(self, bill_line_id: int) -> CodingCase:
+        """Everything the bill coder may look at for one bill. The bill's own job is left out."""
+        bill = await self.db.scalar(
+            select(MoneyLine).where(MoneyLine.id == bill_line_id, MoneyLine.kind == BILL).options(selectinload(MoneyLine.company))
+        )
+        if bill is None:
+            raise InvalidRequestError(f"There is no vendor bill with id {bill_line_id}.")
+
+        same_vendor = list(
+            await self.db.scalars(
+                select(MoneyLine)
+                .where(MoneyLine.kind == BILL, MoneyLine.company_id == bill.company_id, MoneyLine.id != bill.id)
+                .options(selectinload(MoneyLine.job))
+                .order_by(MoneyLine.line_date, MoneyLine.id)
+            )
+        ) if bill.company_id else []
+
+        # Each bill's lines, as the vendor wrote them.
+        raw_line = SourceRecord
+        described: dict[str, list[dict]] = defaultdict(list)
+        for row in await self.db.execute(
+            select(raw_line.payload)
+            .where(
+                raw_line.table_name == "ap_invoice_lines",
+                raw_line.payload["invoice_id"].astext.in_([bill.source_pk, *(other.source_pk for other in same_vendor)]),
+            )
+            .order_by(raw_line.id)
+        ):
+            described[row.payload["invoice_id"]].append(
+                {"description": row.payload.get("description"), "amount": str(row.payload.get("amount"))}
+            )
+
+        # The email the bill arrived on, found by its attachment or by its number in the subject.
+        attachment, email = aliased(SourceRecord), aliased(SourceRecord)
+        subject = await self.db.scalar(
+            select(email.payload["subject"].astext)
+            .where(
+                email.table_name == "inbound_emails",
+                or_(
+                    email.payload["subject"].astext.ilike(f"%{bill.doc_number}%"),
+                    email.source_pk.in_(
+                        select(attachment.payload["inbound_email_id"].astext).where(
+                            attachment.table_name == "inbound_email_attachments",
+                            attachment.payload["filename"].astext.ilike(f"{bill.doc_number}.%"),
+                        )
+                    ),
+                ),
+            )
+            .limit(1)
+        ) if bill.doc_number else None
+
+        jobs = list(await self.db.scalars(select(Job).options(selectinload(Job.customer)).order_by(Job.job_number)))
+        by_id = {job.id: job for job in jobs}
+        work: dict[str, dict] = {job.job_number: {"cost_entries": [], "vendor_bills": []} for job in jobs}
+        for line in await self.db.scalars(
+            select(MoneyLine)
+            .where(MoneyLine.kind.in_(("ops_cost", BILL)), MoneyLine.job_id.is_not(None), MoneyLine.id != bill.id)
+            .options(selectinload(MoneyLine.company))
+            .order_by(MoneyLine.line_date, MoneyLine.id)
+        ):
+            entry = work[by_id[line.job_id].job_number]
+            if line.kind == BILL:
+                entry["vendor_bills"].append(
+                    {"number": line.doc_number, "vendor": line.company.name if line.company else line.description, "dated": str(line.line_date), "amount": str(line.amount)}
+                )
+            else:
+                entry["cost_entries"].append(
+                    {"what": line.description, "category": line.cost_category, "dated": str(line.line_date), "amount": str(line.amount)}
+                )
+
+        day = lambda value: str(value) if value else None  # noqa: E731
+        return CodingCase(
+            bill={
+                "number": bill.doc_number,
+                "vendor": bill.company.name if bill.company else bill.description,
+                "dated": day(bill.line_date),
+                "amount": str(bill.amount),
+                "lines": described.get(bill.source_pk, []),
+                "email_subject": subject,
+            },
+            vendor_history=[
+                {
+                    "number": other.doc_number, "dated": day(other.line_date), "amount": str(other.amount),
+                    "lines": described.get(other.source_pk, []),
+                    "job_number": other.job.job_number if other.job else None,
+                    "job_name": other.job.name if other.job else None,
+                }
+                for other in same_vendor
+            ],
+            jobs=[
+                {
+                    "job_number": job.job_number, "name": job.name, "customer": job.customer.name if job.customer else None,
+                    "branch": job.branch, "kind_of_work": job.service_line, "stage": job.stage, "won_on": day(job.won_on),
+                    "on_site_on": day(job.on_site_on), "completed_on": day(job.completed_on), "closed_on": day(job.closed_on),
+                }
+                for job in jobs
+            ],
+            work_by_job=work,
+        )
+
+    async def _recipient(self, issue: IssueDetailResponse, writer: str) -> Recipient:
+        """Who a follow-up about this issue goes to. A late invoice goes to the customer's
+        billing contact. Everything else stays inside the company: to whoever has the
+        issue, or to finance when the person writing is the one who has it."""
+        if issue.type_key in drafts.CUSTOMER_TYPES and issue.job_number:
+            company, contact = aliased(SourceRecord), aliased(SourceRecord)
+            row = (
+                await self.db.execute(
+                    select(Company.name, contact.payload)
+                    .select_from(Job)
+                    .join(Company, Company.id == Job.customer_id)
+                    .join(company, and_(company.table_name == "companies", company.source_pk == Company.source_id))
+                    .join(
+                        contact,
+                        and_(contact.table_name == "contacts", contact.source_pk == company.payload["billing_contact_id"].astext),
+                    )
+                    .where(Job.job_number == issue.job_number)
+                )
+            ).one_or_none()
+            if row:
+                name = " ".join(part for part in (row.payload.get("first_name"), row.payload.get("last_name")) if part)
+                return Recipient(
+                    audience="customer", name=name or row.name,
+                    role=f"Billing contact at {row.name}", email=row.payload.get("email"),
+                )
+            return Recipient(audience="customer", name="Accounts payable", role="The customer's payables desk", email=None)
+
+        if issue.owner.lower() == writer.lower() or issue.owner == FINANCE_QUEUE:
+            return Recipient(audience="internal", name="Finance", role="Harborstone's finance team", email=None)
+        email = await self.db.scalar(select(JobOwner.email).where(JobOwner.name == issue.owner).limit(1))
+        roles = {"ops_manager": "the job's ops manager", "account_executive": "the job's account executive"}
+        return Recipient(
+            audience="internal", name=issue.owner,
+            role=f"Has this issue as {roles.get(issue.owner_role, 'its assigned owner')}", email=email,
+        )
 
     async def list_ask_history(self, asked_by: str, limit: int = 50) -> list[AskResponse]:
         """One person's conversation, oldest first, ending with the most recent exchange."""

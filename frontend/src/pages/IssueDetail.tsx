@@ -5,6 +5,7 @@ import { UpdateDialog } from '../components/UpdateDialog'
 import { Button, Card, CardHead, Empty, Loaded, PageHead } from '../components/ui'
 import { api } from '../lib/api'
 import type { IssueDetail as Issue } from '../lib/api'
+import { useAssistant } from '../lib/assistant'
 import { dateTime, longDate, money, shortDate, words } from '../lib/format'
 import { useViewer } from '../lib/viewer'
 
@@ -24,6 +25,7 @@ const EVENTS: Record<string, string> = {
   resolved: 'Resolved',
   reopened: 'Reopened',
   cleared: 'Cleared',
+  suggested: 'Suggestion',
 }
 
 const SYSTEMS: Record<string, string> = { crm: 'CRM', project: 'Project system', accounting: 'Accounting' }
@@ -198,7 +200,10 @@ function History({ issue }: { issue: Issue }) {
           <li key={event.id} className="text-[0.8125rem]">
             <p>
               <span className="font-medium">{EVENTS[event.kind] ?? event.kind}</span>
-              <span className="text-ink-2"> by {event.actor === 'system' ? 'a sync' : event.actor}</span>
+              <span className="text-ink-2">
+                {' '}
+                by {event.actor === 'system' ? 'a sync' : event.actor === 'assistant' ? 'the assistant' : event.actor}
+              </span>
             </p>
             {event.note && <p className="text-ink-2">{event.note}</p>}
             <p className="font-mono text-xs leading-4 text-muted">{dateTime(event.created_at)}</p>
@@ -215,6 +220,7 @@ export function IssueDetail() {
   const { viewer } = useViewer()
   const client = useQueryClient()
   const [resolving, setResolving] = useState(false)
+  const { show } = useAssistant()
   const issue = useQuery({ queryKey: ['issue', id], queryFn: () => api.issue(id) })
 
   const reopen = useMutation({
@@ -245,9 +251,15 @@ export function IssueDetail() {
               }
             >
               {active ? (
-                <Button variant="primary" onClick={() => setResolving(true)}>
-                  Log update
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  {data.type_key === 'no_job' && (
+                    <Button onClick={() => show({ kind: 'coding', issue: data })}>Suggest a job</Button>
+                  )}
+                  <Button onClick={() => show({ kind: 'draft', issue: data })}>Draft follow-up</Button>
+                  <Button variant="primary" onClick={() => setResolving(true)}>
+                    Log update
+                  </Button>
+                </div>
               ) : (
                 <Button disabled={reopen.isPending} onClick={() => reopen.mutate()}>
                   Reopen
@@ -257,7 +269,7 @@ export function IssueDetail() {
 
             <Ownership issue={data} />
 
-            <div className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_25rem]">
+            <div className="flex min-w-0 flex-col gap-4">
               <div className="flex min-w-0 flex-col gap-4">
                 <Card className="flex flex-col gap-4 p-5">
                   <div>

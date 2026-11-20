@@ -41,7 +41,7 @@ npm run dev
 ```
 
 Open http://localhost:5173. The first screen offers to run the first sync;
-after that, use **Sync now** in the top bar. Interactive API docs are at
+after that it syncs on a schedule (`SYNC_EVERY_MINUTES`, every hour unless set). Interactive API docs are at
 http://localhost:8000/docs.
 
 If port 8000 is taken, run the API elsewhere and tell the web app where:
@@ -60,7 +60,8 @@ Settings are read from `backend/.env` (copied from `.env.example`):
 | `SOURCE_SCHEMA` | `source_company` | Schema holding the export |
 | `API_KEY` | not set | When set, every `/api/v1` request must send it as `X-API-Key` |
 | `OPENAI_API_KEY` | not set | Turns on Ask. Without it everything else works and Ask says it is not set up |
-| `ASK_MODEL` | not set | Model for Ask. Empty uses the OpenAI Agents SDK default |
+| `ASK_MODEL` | not set | Model for Ask, follow-up drafts and bill coding. Empty uses the OpenAI Agents SDK default |
+| `SYNC_EVERY_MINUTES` | 60 | How often the source systems are read. 0 turns the schedule off |
 
 ## Tests
 
@@ -98,14 +99,14 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 
 | Screen | What it is for |
 | --- | --- |
-| Ask | Type a question in plain words. The answer comes with the records it rests on and the lookups that produced it |
+| Ask | Type a question in plain words. The answer comes with the records it rests on and the lookups that produced it. **Ask AI** in the top bar opens the same conversation beside any page, and it knows which job, issue or list is open |
 | Overview | Finance sees cash owed, invoices not sent, unpaid bills, contract-to-cash totals and issues by type. An ops manager sees their own to-do list, largest first |
 | Jobs | Every job with its revenue, both cost figures, profit, margin and planned margin. Search by job, number or customer, and sort by any heading |
 | Job | Revenue and cost figures side by side. Pick one of each and the profit and margin for that pair appear beside them |
 | Issues | The work queue, with severity, days late, owner and follow-up date; filter by status, severity, type and owner, and sort by any heading. **Log update** on a row records what someone has done, hands the issue to someone else, or sets a date to come back to it. It never contacts anyone or changes an invoice or bill. Saving keeps the issue open; resolving is a separate choice |
 | Issue | What is wrong, what to do, the records behind it and the untouched source row for each, plus its history |
 | Customer invoices, Vendor bills | Every invoice and bill across jobs |
-| Issue types | The thirteen checks, with an on/off switch and tolerance for each |
+| Issue types | The thirteen checks, with an on/off switch and tolerance for each. **Sync now** here applies a change straight away |
 
 | Folder | Holds |
 | --- | --- |
@@ -163,6 +164,8 @@ such as `"246300.00"`. Errors always look like
 | GET | `/lines?kind=` | Invoices or vendor bills across jobs. Filter with `status`, `no_job` and `balance` (`open` or `past_due`) |
 | GET | `/issues` | The work queue, largest first. Filter by `type`, `owner`, `status`, `severity`, `job`; order with `sort` (`amount`, `severity`, `due`, `follow_up`, `owner`) and `order`. Each issue says why its owner has it (`owner_role`), how late it is (`days_late`) and how many other issues are about the same document (`same_document`) |
 | GET | `/issues/{id}` | One issue with its evidence and history |
+| POST | `/issues/{id}/draft` | Draft a follow-up message for a person to send themselves. Returns the recipient, subject, body and anything to check |
+| POST | `/issues/{id}/coding` | Suggest which job an unassigned vendor bill belongs to, with confidence and reasons |
 | POST | `/issues/{id}/actions` | `update` saves any of a note, a new owner and a follow-up date together; `resolve` and `reopen` change its status |
 | GET | `/people` | Who an issue can be assigned to |
 | GET | `/customer-balances` | What each customer owes, largest first |
@@ -172,11 +175,35 @@ such as `"246300.00"`. Errors always look like
 | PATCH | `/issue-types/{key}` | Switch a check off or change its tolerance |
 | GET | `/source-records/{id}` | The untouched source row behind any number |
 
+## Three places the model does work
+
+| Where | What the model does | What stays fixed |
+|---|---|---|
+| **Ask** (`assistant.py`) | Chooses which fixed lookups to run and writes the answer as text, tables, figures and charts | Every figure comes from a lookup. The page it was asked from only names a job or issue; the tools decide what the person may see |
+| **Bill coding** (`coding.py`) | Works out which job an unassigned vendor bill belongs to, from the bill's lines, the email it arrived on, the vendor's history and what each job is spending on. Says how sure it is, and can answer "not a job cost" or "not sure" | It may only name a job it was shown. A low-confidence job is reported as "not sure". A person accepts or rejects; nothing is written to accounting |
+| **Follow-up drafts** (`drafts.py`) | Writes the words of a message about an issue | Who it goes to, their address and every fact it may use are chosen by code. Each dollar figure in the draft is checked against those facts. Nothing is sent |
+
+### How the bill coder is tested
+
+`evals/bill_coding.py` puts every vendor bill that already has a job to the agent with
+that job hidden, and scores the answers against the real ones:
+
+```
+cd backend && uv run python -m evals.bill_coding
+```
+
+It reports right, wrong and unsure separately, plus the number of wrong answers given
+with high confidence, which is the failure that matters. It calls the model once per
+bill (15 bills), so it needs `OPENAI_API_KEY`. The agent never sees a bill's own job in
+any lookup, which a test asserts, so the score is not leaked. Fifteen bills is a small
+set; treat the result as a first check, not a guarantee.
+
 ## Ask: where AI is used, and where it is not
 
 The figures and the thirteen checks are fixed logic, so the same data always
-gives the same answer and every number can be traced. AI is used for one thing:
-answering questions about that data in plain words.
+gives the same answer and every number can be traced. The model never computes
+a figure or decides what counts as an issue. This section covers Ask; the table
+above covers the other two places it is used.
 
 It is built on the OpenAI Agents SDK, in `backend/app/assistant.py`.
 

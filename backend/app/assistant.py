@@ -29,12 +29,13 @@ from agents import (
 from agents.models.interface import Model
 
 from app import database
-from app.errors import APIError, AskFailedError, JobNotFoundError
+from app.errors import APIError, AskFailedError, IssueNotFoundError, JobNotFoundError
 from app.financials import CostBasis, RevenueBasis
 from app.schemas import (
     AskAnswer,
     AskBlock,
     AskMessage,
+    AskPage,
     AskReply,
     AskRequest,
     AskSource,
@@ -84,6 +85,7 @@ How to work:
   a cost, revenue, profit or margin, say which figure it is.
 - An "issue" is a place where the systems disagree, found by a fixed check.
 {scope}
+{page}
 
 How to write:
 - Your answer is a list of blocks. There are four kinds and no others:
@@ -375,10 +377,65 @@ async def totals_by_month(ctx: Ctx, kind: Literal["customer_invoices", "vendor_b
     return ctx.context.result([m.model_dump(mode="json") for m in months])
 
 
+@fixed_tool
+async def get_issue(ctx: Ctx, issue_id: int) -> str:
+    """Everything about one issue: what is wrong, the suggested next step, who has it and
+    why, the records behind it, the notes people have left, and any other open issues
+    about the same invoice or bill.
+
+    Args:
+        issue_id: The issue's number, as given by list_issues or by the page the person is on.
+    """
+    ctx.context.log("get_issue", issue_id=issue_id)
+    issue = await ctx.context.client.get_issue(issue_id)
+    if ctx.context.owner and issue.owner.lower() != ctx.context.owner.lower():
+        # Someone else's. Answer exactly as if it did not exist.
+        raise IssueNotFoundError(issue_id)
+    if issue.job_number:
+        ctx.context.saw_job(issue.job_number, issue.job_name or "")
+    label = f"{issue.title}, {issue.document}" if issue.document else issue.title
+    ctx.context.opened[f"issue-{issue.id}"] = AskSource(kind="issue", id=str(issue.id), label=label)
+    return ctx.context.result({
+        **_dump(issue, *ISSUE_FIELDS, "detail", "next_step", "owner_role", "first_seen_on"),
+        "records": [_dump(line, *LINE_FIELDS, "kind") for line in issue.evidence],
+        "history": [_dump(event, "kind", "actor", "note", "created_at") for event in issue.events],
+        "same_document": [_dump(other, "id", "title", "amount") for other in issue.related],
+    })
+
+
 TOOLS = [
-    company_summary, list_jobs, get_job, list_issues, list_issue_types,
+    company_summary, list_jobs, get_job, list_issues, get_issue, list_issue_types,
     list_invoices, list_vendor_bills, owed_by_customer, totals_by_month,
 ]
+
+PAGES = {
+    "overview": "the overview of cash and issues",
+    "jobs": "the list of jobs",
+    "issues": "the list of issues",
+    "invoices": "the list of customer invoices",
+    "bills": "the list of vendor bills",
+    "issue_types": "the list of issue types and their settings",
+}
+
+
+def on_screen(page: AskPage | None) -> str:
+    """One instruction saying what the person is looking at. It names records for the
+    tools to fetch; it carries no figures, so the answer still comes from the tools."""
+    if page is None:
+        return "- The person is asking from the Ask page, with nothing else on screen."
+    if page.kind == "job" and page.job_number:
+        return (
+            f"- The person has job {page.job_number.upper()} open. \"This job\" or \"it\" means that job. "
+            "Look it up with get_job before answering about it."
+        )
+    if page.kind == "issue" and page.issue_id:
+        return (
+            f"- The person has issue {page.issue_id} open. \"This issue\" or \"it\" means that issue. "
+            "Look it up with get_issue before answering about it."
+        )
+    filters = ", ".join(f"{key} = {value}" for key, value in sorted(page.filters.items()))
+    showing = f", filtered to {filters}" if filters else ""
+    return f"- The person is looking at {PAGES.get(page.kind, 'the app')}{showing}. \"These\" or \"this list\" means what is on that page."
 
 
 def is_configured() -> bool:
@@ -455,7 +512,7 @@ async def answer(client: Any, request: AskRequest, as_of: date, history: list[As
     )
     agent = Agent[AskContext](
         name="Harborstone reconciliation assistant",
-        instructions=INSTRUCTIONS.format(as_of=f"{as_of:%d %B %Y}", scope=scope),
+        instructions=INSTRUCTIONS.format(as_of=f"{as_of:%d %B %Y}", scope=scope, page=on_screen(request.page)),
         tools=TOOLS,
         model=build_model(),
         # The reply is checked against the fixed set of blocks before we see it.

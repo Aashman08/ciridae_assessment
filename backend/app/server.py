@@ -1,10 +1,14 @@
 """FastAPI application declaration and registration."""
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.database import lifespan
+from app import database
+from app.scheduler import sync_on_schedule
 from app.endpoints import health_router, router
 from app.errors import APIError
 from app.exception_handlers import api_error_response
@@ -13,6 +17,19 @@ from app.middleware import request_id_middleware
 # Our own messages (sync results, what each Ask question used) go to the terminal.
 logging.getLogger("app").setLevel(logging.INFO)
 logging.basicConfig(format="%(levelname)s:     %(name)s: %(message)s")
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    """Migrate, then keep the figures current on a schedule until shutdown."""
+    async with database.lifespan(application):
+        every = database.settings.sync_every_minutes
+        schedule = asyncio.create_task(sync_on_schedule(every)) if every > 0 else None
+        try:
+            yield
+        finally:
+            if schedule:
+                schedule.cancel()
+
 
 app = FastAPI(
     title="Harborstone Reconciliation API",

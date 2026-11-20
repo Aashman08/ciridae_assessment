@@ -22,6 +22,8 @@ os.environ.pop("API_KEY", None)
 # value here overrides the file, so no test can reach the network or spend money.
 os.environ["OPENAI_API_KEY"] = ""
 os.environ["ASK_MODEL"] = ""
+# Tests start their own syncs. A scheduled one would change the data under them.
+os.environ["SYNC_EVERY_MINUTES"] = "0"
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
