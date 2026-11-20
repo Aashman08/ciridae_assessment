@@ -33,6 +33,9 @@ from app.models import (
 FINANCE_QUEUE = "Finance queue"
 ZERO = Decimal(0)
 UNSENT_STATUSES = ("APPROVED", "DRAFT", "SYNC_FAILED")
+# Checks about one invoice or bill. Their amounts are that document's dollars, so the
+# same dollars turn up under several of them. The others measure a gap between two totals.
+DOCUMENT_TYPES = ("closed_bills", "past_due", "not_sent", "closed_month", "bill_overdue", "discount", "no_job")
 POSTED_STATUSES = ("POSTED", "POSTING_FAILED")
 
 # key, title, severity, about, tolerance, unit, description
@@ -536,14 +539,40 @@ async def find_issues(db: AsyncSession, run: SyncRun) -> dict:
 
 
 async def apply_action(
-    db: AsyncSession, issue: Issue, action: str, actor: str, note: str | None = None, assignee: str | None = None
+    db: AsyncSession,
+    issue: Issue,
+    action: str,
+    actor: str,
+    note: str | None = None,
+    assignee: str | None = None,
+    follow_up_on: date | None = None,
+    clear_follow_up: bool = False,
 ) -> None:
     """The only way a person changes an issue. Every action leaves an event."""
 
     def log(kind: str, text: str | None) -> None:
         db.add(IssueEvent(issue_id=issue.id, kind=kind, actor=actor, note=text))
 
-    if action == "assign":
+    if action == "update":
+        # What the web app sends: any of a note, a new owner and a follow-up date, saved together.
+        changes_owner = bool(assignee) and assignee != issue.owner
+        changes_date = clear_follow_up or (follow_up_on is not None and follow_up_on != issue.follow_up_on)
+        if not (note or changes_owner or changes_date):
+            raise InvalidRequestError("An update needs a note, a new owner or a follow-up date.")
+        if issue.status in ("resolved", "cleared"):
+            raise InvalidStateError(f"A {issue.status} issue cannot be updated. Reopen it first.")
+        if changes_owner:
+            log("assigned", f"Assigned to {assignee}, was {issue.owner}")
+            issue.owner, issue.status = assignee, "assigned"
+        if clear_follow_up:
+            issue.follow_up_on = None
+            log("follow_up", "Follow-up date removed")
+        elif changes_date:
+            issue.follow_up_on = follow_up_on
+            log("follow_up", f"Follow up on {follow_up_on.day} {follow_up_on:%B %Y}")
+        if note:
+            log("commented", note)
+    elif action == "assign":
         if not assignee:
             raise InvalidRequestError("An assignee is required to assign an issue.")
         if issue.status in ("resolved", "cleared"):
@@ -559,7 +588,7 @@ async def apply_action(
             raise InvalidRequestError("Resolving an issue needs a note saying what was done.")
         if issue.status in ("resolved", "cleared"):
             raise InvalidStateError(f"The issue is already {issue.status}.")
-        issue.status, issue.resolution_note = "resolved", note
+        issue.status, issue.resolution_note, issue.follow_up_on = "resolved", note, None
         log("resolved", note)
     elif action == "reopen":
         if issue.status not in ("resolved", "cleared"):

@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import and_, delete, exists, func, select, text
+from sqlalchemy import and_, case, delete, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -33,8 +33,8 @@ from app.errors import (
     SourceRecordNotFoundError,
     SyncRunNotFoundError,
 )
-from app.financials import CostBasis, RevenueBasis, compute_financials, latest_run_id
-from app.issues import UNSENT_STATUSES, apply_action, find_issues
+from app.financials import LEDGER_MARGIN, LEDGER_PROFIT, CostBasis, RevenueBasis, compute_financials, latest_run_id
+from app.issues import DOCUMENT_TYPES, FINANCE_QUEUE, UNSENT_STATUSES, apply_action, find_issues
 from app.landing import land
 from app.models import (
     AskExchange,
@@ -55,7 +55,9 @@ from app.schemas import (
     AskRequest,
     AskResponse,
     CashSummary,
+    CountedOnce,
     CustomerBalance,
+    PersonResponse,
     MonthTotal,
     ContractToCash,
     IssueAction,
@@ -87,6 +89,10 @@ from app.serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+# What every issue read loads: its type, and its job with the people on it, which
+# says why the issue's owner has it.
+ISSUE_PARTS = (selectinload(Issue.type), selectinload(Issue.job).selectinload(Job.owners))
 
 # How many earlier exchanges the model is shown, so a follow-up question makes sense.
 ASK_MEMORY = 6
@@ -239,6 +245,21 @@ class ReconClient:
         ).all()
         jobs_with_issues = await self.db.scalar(select(func.count(Issue.job_id.distinct())).where(*issue_scope))
 
+        # One invoice or bill can sit under several issue types. Counting the documents
+        # themselves, once each, gives the money actually in question.
+        flagged_lines = (
+            select(IssueEvidence.money_line_id)
+            .join(Issue, Issue.id == IssueEvidence.issue_id)
+            .where(*issue_scope, Issue.type_key.in_(DOCUMENT_TYPES))
+        )
+        flagged = (
+            await self.db.execute(
+                select(func.count(), total_of(MoneyLine.amount - MoneyLine.paid_amount)).where(
+                    MoneyLine.id.in_(flagged_lines), MoneyLine.kind.in_((INVOICE, BILL))
+                )
+            )
+        ).one()
+
         return SummaryResponse(
             sync_run_id=run.id,
             as_of=run.as_of,
@@ -266,6 +287,7 @@ class ReconClient:
                 IssuesByType(type_key=r.type_key, title=r.title, severity=r.severity, count=r.count, amount=r.amount)
                 for r in by_type
             ],
+            flagged_documents=CountedOnce(count=flagged[0], amount=flagged[1]),
         )
 
     # --- Jobs --------------------------------------------------------------------
@@ -288,6 +310,25 @@ class ReconClient:
             where.append(owned_by(filters.owner))
         if filters.has_issues is not None:
             where.append(issue_count > 0 if filters.has_issues else issue_count == 0)
+        if filters.q:
+            match = f"%{filters.q.strip()}%"
+            customer = select(Company.id).where(Company.name.ilike(match))
+            where.append(or_(Job.job_number.ilike(match), Job.name.ilike(match), Job.customer_id.in_(customer)))
+
+        sort_by = {
+            "issues": issue_count,
+            "job_number": Job.job_number,
+            "name": Job.name,
+            "contract": Job.contract_value,
+            "revenue": JobFinancials.ledger_revenue,
+            "cost": JobFinancials.ledger_cost,
+            "profit": LEDGER_PROFIT,
+            "margin": LEDGER_MARGIN,
+            "planned_margin": Job.planned_margin_pct,
+            "owed": JobFinancials.owed,
+        }[filters.sort]
+        # A job with no margin yet goes last whichever way the list is sorted.
+        first = (sort_by.asc() if filters.order == "asc" else sort_by.desc()).nulls_last()
 
         joined = select(Job, JobFinancials).join(JobFinancials, JobFinancials.job_id == Job.id).where(*where)
         total = await self.db.scalar(
@@ -296,7 +337,7 @@ class ReconClient:
         rows = (
             await self.db.execute(
                 joined.options(selectinload(Job.owners), selectinload(Job.customer))
-                .order_by(issue_count.desc(), Job.contract_value.desc(), Job.job_number)
+                .order_by(first, Job.contract_value.desc(), Job.job_number)
                 .offset(filters.offset)
                 .limit(filters.limit)
             )
@@ -315,7 +356,7 @@ class ReconClient:
         job, fin = await self._job(job_number)
         issues = (await self._active_issues_by_job([job.id])).get(job.id, [])
         lines = await self._lines(MoneyLine.job_id == job.id, MoneyLine.kind.in_((INVOICE, BILL)))
-        return job_detail_response(job, fin, issues, lines, revenue, cost)
+        return job_detail_response(job, fin, issues, lines, revenue, cost, (await self._current_run()).as_of)
 
     async def list_job_lines(self, job_number: str, kind: str | None = None) -> list[LineResponse]:
         """Every money line on the job. Each one names the source record it came from."""
@@ -335,6 +376,13 @@ class ReconClient:
             where.append(MoneyLine.job_id.in_(select(Job.id).where(owned_by(filters.owner))))
         if filters.no_job is not None:
             where.append(MoneyLine.job_id.is_(None) if filters.no_job else MoneyLine.job_id.is_not(None))
+        if filters.status:
+            where.append(MoneyLine.status == filters.status.upper())
+        if filters.balance:
+            where.append(MoneyLine.amount > MoneyLine.paid_amount)
+        if filters.balance == "past_due":
+            run = await self._current_run()
+            where.extend([MoneyLine.status == "SENT", MoneyLine.due_date < run.as_of])
 
         total = await self.db.scalar(select(func.count()).select_from(MoneyLine).where(*where))
         lines = await self.db.scalars(
@@ -365,19 +413,42 @@ class ReconClient:
         if filters.job:
             where.append(Issue.job_id.in_(select(Job.id).where(Job.job_number == filters.job.upper())))
 
+        high_first = case((IssueType.severity == "high", 1), else_=0)
+        sort_by = {
+            "amount": Issue.amount,
+            "severity": select(high_first).where(IssueType.key == Issue.type_key).correlate(Issue).scalar_subquery(),
+            "due": Issue.due_on,
+            "follow_up": Issue.follow_up_on,
+            "owner": Issue.owner,
+        }[filters.sort]
+        # Issues with no date go last whichever way the list is sorted.
+        first = (sort_by.asc() if filters.order == "asc" else sort_by.desc()).nulls_last()
+
         total = await self.db.scalar(select(func.count()).select_from(Issue).where(*where))
         issues = await self.db.scalars(
             select(Issue)
             .where(*where)
-            .options(selectinload(Issue.type), selectinload(Issue.job))
-            .order_by(Issue.amount.desc(), Issue.key)
+            .options(*ISSUE_PARTS)
+            .order_by(first, Issue.amount.desc(), Issue.key)
             .offset(filters.offset)
             .limit(filters.limit)
         )
-        return self._page([issue_response(i) for i in issues], total, filters)
+        as_of = await self._as_of()
+        return self._page([issue_response(i, as_of) for i in issues], total, filters)
 
     async def get_issue(self, issue_id: int) -> IssueDetailResponse:
-        return issue_detail_response(await self._issue(issue_id))
+        return await self._issue_detail(issue_id)
+
+    async def list_people(self) -> list[PersonResponse]:
+        """Everyone an issue can be given to: the ops managers and account executives
+        named on jobs, and the finance queue."""
+        rows = await self.db.execute(
+            select(JobOwner.name, func.array_agg(JobOwner.role.distinct()))
+            .group_by(JobOwner.name)
+            .order_by(JobOwner.name)
+        )
+        people = [PersonResponse(name=name, roles=sorted(roles)) for name, roles in rows]
+        return [*people, PersonResponse(name=FINANCE_QUEUE, roles=["finance"])]
 
     async def act_on_issue(self, issue_id: int, payload: IssueAction) -> IssueDetailResponse:
         """Assign, comment on, resolve or reopen. Recorded here only; nothing goes to the source systems."""
@@ -385,9 +456,12 @@ class ReconClient:
         issue = await self.db.scalar(select(Issue).where(Issue.id == issue_id).with_for_update())
         if issue is None:
             raise IssueNotFoundError(issue_id)
-        await apply_action(self.db, issue, payload.action, payload.actor, payload.note, payload.assignee)
+        await apply_action(
+            self.db, issue, payload.action, payload.actor, payload.note, payload.assignee,
+            payload.follow_up_on, payload.clear_follow_up,
+        )
         await self.db.commit()
-        return issue_detail_response(await self._issue(issue_id))
+        return await self._issue_detail(issue_id)
 
     # --- Issue types -------------------------------------------------------------
 
@@ -561,7 +635,7 @@ class ReconClient:
         issues = await self.db.scalars(
             select(Issue)
             .where(Issue.job_id.in_(job_ids), Issue.status.in_(ACTIVE))
-            .options(selectinload(Issue.type), selectinload(Issue.job))
+            .options(*ISSUE_PARTS)
         )
         for issue in issues:
             by_job[issue.job_id].append(issue)
@@ -584,16 +658,36 @@ class ReconClient:
         )
         return list(await self.db.scalars(query))
 
+    async def _as_of(self) -> date | None:
+        """The date of the latest sync, or None before the first one."""
+        run_id = await latest_run_id(self.db)
+        return (await self.db.get(SyncRun, run_id)).as_of if run_id else None
+
+    async def _issue_detail(self, issue_id: int) -> IssueDetailResponse:
+        issue = await self._issue(issue_id)
+        related: list[Issue] = []
+        if issue.document:
+            # The other open issues about the same invoice or bill, largest first.
+            related = list(
+                await self.db.scalars(
+                    select(Issue)
+                    .where(Issue.document == issue.document, Issue.id != issue.id, Issue.status.in_(ACTIVE))
+                    .options(*ISSUE_PARTS)
+                    .order_by(Issue.amount.desc(), Issue.key)
+                )
+            )
+        return issue_detail_response(issue, await self._as_of(), related)
+
     async def _issue(self, issue_id: int) -> Issue:
         evidence_line = selectinload(Issue.evidence).selectinload(IssueEvidence.line)
         query = (
             select(Issue)
             .where(Issue.id == issue_id)
             .options(
-                selectinload(Issue.type),
-                selectinload(Issue.job),
+                *ISSUE_PARTS,
                 selectinload(Issue.events),
-                evidence_line.selectinload(MoneyLine.job),
+                # The same job is reached twice, so both paths load the people on it.
+                evidence_line.selectinload(MoneyLine.job).selectinload(Job.owners),
                 evidence_line.selectinload(MoneyLine.company),
             )
             .execution_options(populate_existing=True)

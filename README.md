@@ -100,9 +100,9 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 | --- | --- |
 | Ask | Type a question in plain words. The answer comes with the records it rests on and the lookups that produced it |
 | Overview | Finance sees cash owed, invoices not sent, unpaid bills, contract-to-cash totals and issues by type. An ops manager sees their own to-do list, largest first |
-| Jobs | Every job with the figures each system holds for it |
+| Jobs | Every job with its revenue, both cost figures, profit, margin and planned margin. Search by job, number or customer, and sort by any heading |
 | Job | Revenue and cost figures side by side. Pick one of each and the profit and margin for that pair appear beside them |
-| Issues | The work queue. **Log update** on a row records what someone has already done. It never contacts anyone or changes an invoice or bill. A note keeps the issue open; resolving is a separate choice |
+| Issues | The work queue, with severity, days late, owner and follow-up date; filter by status, severity, type and owner, and sort by any heading. **Log update** on a row records what someone has done, hands the issue to someone else, or sets a date to come back to it. It never contacts anyone or changes an invoice or bill. Saving keeps the issue open; resolving is a separate choice |
 | Issue | What is wrong, what to do, the records behind it and the untouched source row for each, plus its history |
 | Customer invoices, Vendor bills | Every invoice and bill across jobs |
 | Issue types | The thirteen checks, with an on/off switch and tolerance for each |
@@ -156,14 +156,15 @@ such as `"246300.00"`. Errors always look like
 | --- | --- | --- |
 | POST | `/sync-runs` | Run a sync. Optional `as_of` date |
 | GET | `/sync-runs`, `/sync-runs/{id}` | Past runs and what each did |
-| GET | `/summary` | Cash position, contract-to-cash totals, issues by type. `owner` filters to one ops manager |
-| GET | `/jobs` | Jobs with figures from each system. Filter by `stage`, `owner`, `branch`, `has_issues` |
+| GET | `/summary` | Cash position, contract-to-cash totals, issues by type, and `flagged_documents`: the invoices and bills with an open issue, each counted once. `owner` filters to one ops manager |
+| GET | `/jobs` | Jobs with figures from each system, including `ledger_profit` and `ledger_margin_pct`. Filter by `stage`, `owner`, `branch`, `has_issues`; search with `q`; order with `sort` and `order` |
 | GET | `/jobs/{number}` | One job: revenue and cost figures side by side, and profit for the `revenue` and `cost` pair chosen |
 | GET | `/jobs/{number}/lines` | Every money line on the job |
-| GET | `/lines?kind=` | Invoices or vendor bills across jobs |
-| GET | `/issues` | The work queue, largest first. Filter by `type`, `owner`, `status`, `severity`, `job` |
+| GET | `/lines?kind=` | Invoices or vendor bills across jobs. Filter with `status`, `no_job` and `balance` (`open` or `past_due`) |
+| GET | `/issues` | The work queue, largest first. Filter by `type`, `owner`, `status`, `severity`, `job`; order with `sort` (`amount`, `severity`, `due`, `follow_up`, `owner`) and `order`. Each issue says why its owner has it (`owner_role`), how late it is (`days_late`) and how many other issues are about the same document (`same_document`) |
 | GET | `/issues/{id}` | One issue with its evidence and history |
-| POST | `/issues/{id}/actions` | Assign, comment, resolve or reopen |
+| POST | `/issues/{id}/actions` | `update` saves any of a note, a new owner and a follow-up date together; `resolve` and `reopen` change its status |
+| GET | `/people` | Who an issue can be assigned to |
 | GET | `/customer-balances` | What each customer owes, largest first |
 | POST | `/ask` | Ask a question in plain words. Returns the answer as plain text (`answer`) and laid out for display (`spec`), the lookups used and the records it rests on, and saves the exchange |
 | GET, DELETE | `/ask/history?asked_by=` | Read or clear one person's saved conversation |

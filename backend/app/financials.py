@@ -66,6 +66,17 @@ def margin_pct(revenue: Decimal, cost: Decimal) -> Decimal | None:
     return ((revenue - cost) / revenue * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
 
 
+def ledger_profit(fin: JobFinancials) -> dict:
+    """The one profit figure a list of jobs shows: what finance has booked as earned,
+    less what finance has booked as cost. Opening a job offers the other pairs."""
+    return profit(fin, RevenueBasis.ledger, CostBasis.ledger)
+
+
+# The same two figures as SQL, so a list of jobs can be sorted by them in the database.
+LEDGER_PROFIT = JobFinancials.ledger_revenue - JobFinancials.ledger_cost
+LEDGER_MARGIN = LEDGER_PROFIT / func.nullif(JobFinancials.ledger_revenue, 0)
+
+
 def profit(fin: JobFinancials, revenue_basis: RevenueBasis, cost_basis: CostBasis) -> dict:
     revenue, cost = revenue_for(fin, revenue_basis), cost_for(fin, cost_basis)
     return {

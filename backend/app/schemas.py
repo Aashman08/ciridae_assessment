@@ -55,12 +55,21 @@ class JobFilters(Paging):
     owner: str | None = Field(None, description="Ops manager's name")
     branch: str | None = None
     has_issues: bool | None = None
+    q: str | None = Field(None, max_length=120, description="Part of a job number, job name or customer name")
+    sort: Literal[
+        "issues", "job_number", "name", "contract", "revenue", "cost", "profit", "margin", "planned_margin", "owed"
+    ] = Field("issues", description="profit and margin use ledger revenue and ledger cost")
+    order: Literal["asc", "desc"] = "desc"
 
 
 class LineFilters(Paging):
     kind: str = Field(description="customer_invoice, vendor_bill, or any other money line kind")
     owner: str | None = Field(None, description="Limit to one ops manager's jobs")
-    no_job: bool | None = Field(None, description="Only lines with no job assigned")
+    no_job: bool | None = Field(None, description="True for lines with no job assigned, false for lines with one")
+    status: str | None = Field(None, description="Only lines with this source status, such as SENT or NEEDS_REVIEW")
+    balance: Literal["open", "past_due"] | None = Field(
+        None, description="open: still has an amount unpaid. past_due: a sent invoice unpaid after its due date"
+    )
 
 
 class IssueFilters(Paging):
@@ -69,6 +78,8 @@ class IssueFilters(Paging):
     status: str = Field("active", description="active (open or assigned), open, assigned, resolved, cleared or all")
     severity: Literal["high", "medium"] | None = None
     job: str | None = Field(None, description="Job number")
+    sort: Literal["amount", "severity", "due", "follow_up", "owner"] = "amount"
+    order: Literal["asc", "desc"] = "desc"
 
 
 # --- Sync runs -----------------------------------------------------------------
@@ -137,9 +148,17 @@ class IssueResponse(BaseModel):
     next_step: str
     action_label: str
     owner: str
+    owner_role: Literal["ops_manager", "account_executive", "finance", "assigned"] = Field(
+        description="Why this person has it: the job's ops manager, its account executive because there is no "
+        "ops manager, the finance queue because there is neither, or because someone assigned it to them"
+    )
     status: str
     resolution_note: str | None
     note_count: int = Field(description="How many notes people have left on this issue")
+    follow_up_on: date | None = Field(description="A date someone set to come back to this")
+    days_late: int | None = Field(description="Days past `due_on` as of the sync date. None when not yet due or no due date")
+    same_document: int = Field(description="Other open issues about the same invoice or bill. It is the same money")
+    first_seen_on: date
     first_seen_run_id: int
     last_seen_run_id: int
     updated_at: datetime
@@ -155,18 +174,37 @@ class EventResponse(BaseModel):
     created_at: datetime
 
 
+class RelatedIssue(BaseModel):
+    id: int
+    title: str
+    severity: str
+    amount: Money
+
+
 class IssueDetailResponse(IssueResponse):
     evidence: list[LineResponse]
     events: list[EventResponse]
+    related: list[RelatedIssue] = Field(description="Other open issues about the same invoice or bill")
 
 
 class IssueAction(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    action: Literal["assign", "comment", "resolve", "reopen"]
+    action: Literal["update", "assign", "comment", "resolve", "reopen"] = Field(
+        description="update saves any of a note, a new owner and a follow-up date together"
+    )
     actor: str = Field(min_length=1, max_length=120, description="Who is doing this")
     note: str | None = None
     assignee: str | None = Field(None, max_length=120)
+    follow_up_on: date | None = Field(None, description="With update: a date to come back to this")
+    clear_follow_up: bool = Field(False, description="With update: remove the follow-up date")
+
+
+class PersonResponse(BaseModel):
+    """Someone an issue can belong to."""
+
+    name: str
+    roles: list[str] = Field(description="ops_manager, account_executive or finance")
 
 
 class IssueTypeResponse(BaseModel):
@@ -210,6 +248,8 @@ class JobSummaryResponse(BaseModel):
     contract_value: Money
     budget: Money
     planned_margin_pct: Percent | None
+    ledger_profit: Money = Field(description="Ledger revenue less ledger cost")
+    ledger_margin_pct: Percent | None = Field(description="Ledger profit as a share of ledger revenue. None with no revenue")
     ledger_revenue: Money
     invoiced: Money
     sent: Money
@@ -287,6 +327,11 @@ class IssuesByType(BaseModel):
     amount: Money
 
 
+class CountedOnce(BaseModel):
+    count: int
+    amount: Money
+
+
 class SummaryResponse(BaseModel):
     sync_run_id: int
     as_of: date
@@ -297,6 +342,10 @@ class SummaryResponse(BaseModel):
     open_issue_count: int
     jobs_with_issues: int
     issues_by_type: list[IssuesByType]
+    flagged_documents: CountedOnce = Field(
+        description="The invoices and bills with at least one open issue, each counted once however many issues name it, "
+        "and what is unpaid on them"
+    )
 
 
 # --- Source records ------------------------------------------------------------

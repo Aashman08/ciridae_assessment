@@ -57,10 +57,19 @@ export interface Issue {
   next_step: string
   action_label: string
   owner: string
+  /** Why the owner has it. `account_executive` means the job has no ops manager. */
+  owner_role: 'ops_manager' | 'account_executive' | 'finance' | 'assigned'
   status: 'open' | 'assigned' | 'resolved' | 'cleared'
   resolution_note: string | null
   /** How many notes people have left on this issue. */
   note_count: number
+  /** A date someone set to come back to this. */
+  follow_up_on: string | null
+  /** Days past `due_on` as of the sync date. Null when not yet due. */
+  days_late: number | null
+  /** Other open issues about the same invoice or bill. It is the same money. */
+  same_document: number
+  first_seen_on: string
   updated_at: string
 }
 
@@ -75,7 +84,39 @@ export interface IssueEvent {
 export interface IssueDetail extends Issue {
   evidence: Line[]
   events: IssueEvent[]
+  /** Other open issues about the same invoice or bill. */
+  related: { id: number; title: string; severity: 'high' | 'medium'; amount: Money }[]
 }
+
+/** Someone an issue can belong to. */
+export interface Person {
+  name: string
+  roles: string[]
+}
+
+/** What "Log update" saves: any of a note, a new owner and a follow-up date. */
+export interface IssueUpdate {
+  action: 'update' | 'resolve' | 'reopen'
+  actor: string
+  note?: string
+  assignee?: string
+  follow_up_on?: string
+  clear_follow_up?: boolean
+}
+
+export type Order = 'asc' | 'desc'
+export type JobSort =
+  | 'issues'
+  | 'job_number'
+  | 'name'
+  | 'contract'
+  | 'revenue'
+  | 'cost'
+  | 'profit'
+  | 'margin'
+  | 'planned_margin'
+  | 'owed'
+export type IssueSort = 'amount' | 'severity' | 'due' | 'follow_up' | 'owner'
 
 export interface IssueType {
   key: string
@@ -102,6 +143,10 @@ export interface JobSummary {
   contract_value: Money
   budget: Money
   planned_margin_pct: string | null
+  /** Ledger revenue less ledger cost. */
+  ledger_profit: Money
+  /** Ledger profit as a share of ledger revenue. Null with no revenue. */
+  ledger_margin_pct: string | null
   ledger_revenue: Money
   invoiced: Money
   sent: Money
@@ -172,6 +217,8 @@ export interface Summary {
   open_issue_count: number
   jobs_with_issues: number
   issues_by_type: { type_key: string; title: string; severity: string; count: number; amount: Money }[]
+  /** Invoices and bills with an open issue, each counted once, and what is unpaid on them. */
+  flagged_documents: { count: number; amount: Money }
 }
 
 export interface AskSource {
@@ -269,19 +316,36 @@ export type Paging = {
 export const api = {
   summary: (owner?: string) => request<Summary>(`/summary${query({ owner })}`),
 
-  jobs: (params: Paging & { stage?: string; owner?: string }) =>
+  jobs: (params: Paging & { stage?: string; owner?: string; q?: string; sort?: JobSort; order?: Order }) =>
     request<ListResponse<JobSummary>>(`/jobs${query(params)}`),
   job: (jobNumber: string, revenue: RevenueBasis, cost: CostBasis) =>
     request<JobDetail>(`/jobs/${jobNumber}${query({ revenue, cost })}`),
 
-  lines: (params: Paging & { kind: 'customer_invoice' | 'vendor_bill'; owner?: string }) =>
+  lines: (
+    params: Paging & {
+      kind: 'customer_invoice' | 'vendor_bill'
+      owner?: string
+      status?: string
+      no_job?: string
+      balance?: string
+    },
+  ) =>
     request<ListResponse<Line>>(`/lines${query(params)}`),
 
-  issues: (params: Paging & { type?: string; owner?: string; status?: string }) =>
+  issues: (
+    params: Paging & {
+      type?: string
+      owner?: string
+      status?: string
+      severity?: string
+      sort?: IssueSort
+      order?: Order
+    },
+  ) =>
     request<ListResponse<Issue>>(`/issues${query(params)}`),
   issue: (id: number) => request<IssueDetail>(`/issues/${id}`),
-  actOnIssue: (id: number, body: { action: 'comment' | 'resolve' | 'reopen'; actor: string; note?: string }) =>
-    post<IssueDetail>(`/issues/${id}/actions`, body),
+  actOnIssue: (id: number, body: IssueUpdate) => post<IssueDetail>(`/issues/${id}/actions`, body),
+  people: () => request<Person[]>('/people'),
 
   issueTypes: () => request<IssueType[]>('/issue-types'),
   updateIssueType: (key: string, body: { enabled?: boolean; tolerance?: string }) =>

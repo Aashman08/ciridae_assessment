@@ -1,5 +1,7 @@
 """HTTP behaviour: routes, filters, paging, errors and access."""
 
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import event
 
@@ -319,7 +321,7 @@ async def test_filtering_sorting_and_paging_run_in_the_database(api):
     listing = next(s for s in statements if "FROM recon.issue" in s and "LIMIT" in s)
     assert "lower(recon.issue.owner) =" in listing
     assert "recon.issue_type.severity =" in listing
-    assert "ORDER BY recon.issue.amount DESC, recon.issue.key" in listing
+    assert "ORDER BY recon.issue.amount DESC NULLS LAST, recon.issue.amount DESC, recon.issue.key" in listing
     assert "OFFSET" in listing
 
     assert (len(jobs["data"]), jobs["has_more"]) == (3, True)
@@ -357,6 +359,150 @@ async def test_openapi_describes_every_route(api):
     assert {
         "/health", "/api/v1/ask", "/api/v1/ask/history", "/api/v1/customer-balances", "/api/v1/sync-runs", "/api/v1/sync-runs/{run_id}", "/api/v1/summary", "/api/v1/jobs",
         "/api/v1/jobs/{job_number}", "/api/v1/jobs/{job_number}/lines", "/api/v1/lines", "/api/v1/issues",
-        "/api/v1/issues/{issue_id}", "/api/v1/issues/{issue_id}/actions", "/api/v1/issue-types",
+        "/api/v1/issues/{issue_id}", "/api/v1/issues/{issue_id}/actions", "/api/v1/issue-types", "/api/v1/people",
         "/api/v1/issue-types/{key}", "/api/v1/source-records/{record_id}",
     } == set(paths)
+
+
+async def test_lines_can_be_filtered_by_status_job_and_balance(api, db):
+    from sqlalchemy import text
+
+    async def count(where: str) -> int:
+        return await db.scalar(text(f"select count(*) from recon.money_line where {where}"))
+
+    async def listed(**params) -> dict:
+        response = await api.get(f"{API}/lines", params={"limit": 100, **params})
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    review = await listed(kind="vendor_bill", status="NEEDS_REVIEW")
+    assert review["total"] == await count("kind = 'vendor_bill' and status = 'NEEDS_REVIEW'") > 0
+    assert {line["status"] for line in review["data"]} == {"NEEDS_REVIEW"}
+
+    orphans = await listed(kind="vendor_bill", no_job="true")
+    assert orphans["total"] == 3 and all(line["job_number"] is None for line in orphans["data"])
+    assigned = await listed(kind="vendor_bill", no_job="false")
+    assert assigned["total"] == 15 and all(line["job_number"] for line in assigned["data"])
+
+    owed = await listed(kind="customer_invoice", balance="open")
+    assert sum(Decimal(line["open_amount"]) for line in owed["data"]) == Decimal("1477564.00")
+    late = await listed(kind="customer_invoice", balance="past_due")
+    assert late["total"] == 5
+    assert sum(Decimal(line["open_amount"]) for line in late["data"]) == Decimal("719004.00")
+
+    assert (await api.get(f"{API}/lines", params={"kind": "vendor_bill", "balance": "huge"})).status_code == 422
+
+
+async def test_jobs_show_ledger_profit_and_sort_by_it_in_the_database(api):
+    """What a job earned is on the list itself, not only behind a click."""
+    jobs = (await get(api, "/jobs", limit=100))["data"]
+    for job in jobs:
+        revenue, cost = Decimal(job["ledger_revenue"]), Decimal(job["ledger_cost"])
+        assert Decimal(job["ledger_profit"]) == revenue - cost
+        if revenue > 0:
+            assert Decimal(job["ledger_margin_pct"]) == ((revenue - cost) / revenue * 100).quantize(Decimal("0.1"))
+        else:
+            assert job["ledger_margin_pct"] is None
+
+    worst = (await get(api, "/jobs", sort="profit", order="asc", limit=100))["data"]
+    profits = [Decimal(job["ledger_profit"]) for job in worst]
+    assert profits == sorted(profits) and len(set(profits)) > 1
+
+    # A job with no revenue has no margin. It goes last whichever way the list runs.
+    for order in ("asc", "desc"):
+        margins = [job["ledger_margin_pct"] for job in (await get(api, "/jobs", sort="margin", order=order, limit=100))["data"]]
+        known = [Decimal(m) for m in margins if m is not None]
+        assert margins[: len(known)] == [m for m in margins if m is not None]
+        assert known == sorted(known, reverse=order == "desc")
+
+    assert (await api.get(f"{API}/jobs", params={"sort": "luck"})).status_code == 422
+
+
+async def test_jobs_can_be_searched_by_number_name_or_customer(api):
+    by_name = await get(api, "/jobs", q="dock rebuild")
+    assert [job["job_number"] for job in by_name["data"]] == ["CTX00080002"]
+    assert (await get(api, "/jobs", q="ctx00080002"))["total"] == 1
+    by_customer = await get(api, "/jobs", q="Redbird Industrial")
+    assert by_customer["total"] >= 2 and {job["customer"] for job in by_customer["data"]} == {"Redbird Industrial Trust"}
+    assert (await get(api, "/jobs", q="no such job"))["total"] == 0
+
+
+async def test_flagged_money_is_counted_once(api, db):
+    """One bill under three issue types is still one bill."""
+    from sqlalchemy import text
+
+    summary = await get(api, "/summary")
+    by_type = sum(Decimal(row["amount"]) for row in summary["issues_by_type"])
+    once = Decimal(summary["flagged_documents"]["amount"])
+    assert once < by_type
+
+    count, amount = (
+        await db.execute(text(
+            "select count(*), sum(amount - paid_amount) from recon.money_line where id in ("
+            "  select e.money_line_id from recon.issue_evidence e join recon.issue i on i.id = e.issue_id"
+            "  where i.status in ('open', 'assigned') and i.type_key in "
+            "  ('closed_bills', 'past_due', 'not_sent', 'closed_month', 'bill_overdue', 'discount', 'no_job')"
+            ") and kind in ('customer_invoice', 'vendor_bill')"
+        ))
+    ).one()
+    assert (summary["flagged_documents"]["count"], once) == (count, amount)
+
+    # Each issue says how many others are about the same document, and names them.
+    issues = (await get(api, "/issues", limit=100))["data"]
+    shared = next(i for i in issues if i["document"] == "ARS-20390")
+    assert shared["same_document"] == 1
+    detail = await get(api, f"/issues/{shared['id']}")
+    assert [r["title"] for r in detail["related"]] != [] and all(r["id"] != shared["id"] for r in detail["related"])
+    assert all(i["same_document"] == 0 for i in issues if i["document"] is None)
+
+
+async def test_issues_say_why_their_owner_has_them_and_how_late_they_are(api):
+    issues = (await get(api, "/issues", limit=100))["data"]
+    roles = {i["owner"]: i["owner_role"] for i in issues}
+    assert (roles[TASHA], roles["Danny Alvarez"]) == ("ops_manager", "account_executive")
+    assert {i["owner_role"] for i in issues if i["owner"] == "Finance queue"} <= {"finance"}
+
+    late = next(i for i in issues if i["document"] == "INV-2026-0538")
+    assert (late["due_on"], late["days_late"]) == ("2026-07-14", 14)
+    assert all(i["days_late"] is None for i in issues if i["due_on"] is None or i["due_on"] >= "2026-07-28")
+
+    soonest = (await get(api, "/issues", sort="due", order="asc", limit=100))["data"]
+    dated = [i["due_on"] for i in soonest if i["due_on"]]
+    assert dated == sorted(dated) and [i["due_on"] for i in soonest[: len(dated)]] == dated
+    by_severity = [i["severity"] for i in (await get(api, "/issues", sort="severity", limit=100))["data"]]
+    assert by_severity == sorted(by_severity)  # "high" before "medium"
+
+
+async def test_an_update_saves_a_note_an_owner_and_a_follow_up_date_together(api):
+    people = await get(api, "/people")
+    assert {"name": TASHA, "roles": ["ops_manager"]} in people
+    assert people[-1] == {"name": "Finance queue", "roles": ["finance"]}
+
+    issue = next(i for i in (await get(api, "/issues", limit=100))["data"] if i["document"] == "INV-2026-0515")
+    path = f"{API}/issues/{issue['id']}/actions"
+
+    updated = (await api.post(path, json={
+        "action": "update", "actor": "Rachel Kim", "note": "Their AP says the cheque runs on the 4th.",
+        "assignee": TASHA, "follow_up_on": "2026-08-04",
+    })).json()
+    assert (updated["owner"], updated["owner_role"], updated["status"]) == (TASHA, "assigned", "assigned")
+    assert (updated["follow_up_on"], updated["note_count"]) == ("2026-08-04", 1)
+    assert [(e["kind"], e["note"]) for e in updated["events"][-3:]] == [
+        ("assigned", f"Assigned to {TASHA}, was {issue['owner']}"),
+        ("follow_up", "Follow up on 4 August 2026"),
+        ("commented", "Their AP says the cheque runs on the 4th."),
+    ]
+
+    # It is now in Tasha's list, sorted by when she said she would come back to it.
+    mine = (await get(api, "/issues", owner=TASHA, sort="follow_up", order="asc"))["data"]
+    assert mine[0]["id"] == issue["id"]
+
+    cleared = (await api.post(path, json={"action": "update", "actor": TASHA, "clear_follow_up": True})).json()
+    assert cleared["follow_up_on"] is None and cleared["events"][-1]["note"] == "Follow-up date removed"
+
+    # Saying nothing is not an update, and the same owner again is not a change.
+    assert (await api.post(path, json={"action": "update", "actor": TASHA})).status_code == 400
+    assert (await api.post(path, json={"action": "update", "actor": TASHA, "assignee": TASHA})).status_code == 400
+
+    # Hand it back so later tests see the export's own owner.
+    await api.post(path, json={"action": "update", "actor": "Rachel Kim", "assignee": issue["owner"]})

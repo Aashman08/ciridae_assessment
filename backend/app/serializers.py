@@ -1,5 +1,6 @@
 """Conversions from database entities to API response models."""
 
+from datetime import date
 from decimal import Decimal
 
 from app.financials import (
@@ -8,6 +9,7 @@ from app.financials import (
     CostBasis,
     RevenueBasis,
     cost_for,
+    ledger_profit,
     profit,
     revenue_for,
 )
@@ -23,6 +25,7 @@ from app.schemas import (
     JobSummaryResponse,
     LineResponse,
     ProfitResponse,
+    RelatedIssue,
     TopIssue,
 )
 
@@ -49,7 +52,19 @@ def line_response(line: MoneyLine) -> LineResponse:
     )
 
 
-def _issue_fields(issue: Issue) -> dict:
+def _owner_role(issue: Issue) -> str:
+    """Why the issue's owner has it. An issue goes to the job's ops manager, then its
+    account executive, then finance, unless a person has assigned it to someone."""
+    if issue.status == "assigned":
+        return "assigned"
+    for role in ("ops_manager", "account_executive"):
+        if issue.job and owner_name(issue.job, role) == issue.owner:
+            return role
+    return "finance"
+
+
+def _issue_fields(issue: Issue, as_of: date | None) -> dict:
+    late = (as_of - issue.due_on).days if as_of and issue.due_on else 0
     return {
         "id": issue.id,
         "key": issue.key,
@@ -70,20 +85,29 @@ def _issue_fields(issue: Issue) -> dict:
         "owner": issue.owner,
         "status": issue.status,
         "resolution_note": issue.resolution_note,
+        "owner_role": _owner_role(issue),
         "note_count": issue.note_count,
+        "follow_up_on": issue.follow_up_on,
+        "days_late": late if late > 0 else None,
+        "same_document": issue.same_document if issue.document else 0,
+        "first_seen_on": issue.created_at.date(),
         "first_seen_run_id": issue.first_seen_run_id,
         "last_seen_run_id": issue.last_seen_run_id,
         "updated_at": issue.updated_at,
     }
 
 
-def issue_response(issue: Issue) -> IssueResponse:
-    return IssueResponse(**_issue_fields(issue))
+def issue_response(issue: Issue, as_of: date | None) -> IssueResponse:
+    return IssueResponse(**_issue_fields(issue, as_of))
 
 
-def issue_detail_response(issue: Issue) -> IssueDetailResponse:
+def issue_detail_response(issue: Issue, as_of: date | None, related: list[Issue]) -> IssueDetailResponse:
     return IssueDetailResponse(
-        **_issue_fields(issue),
+        **_issue_fields(issue, as_of),
+        related=[
+            RelatedIssue(id=other.id, title=other.type.title, severity=other.type.severity, amount=other.amount)
+            for other in related
+        ],
         evidence=[line_response(e.line) for e in issue.evidence],
         events=[EventResponse.model_validate(e) for e in issue.events],
     )
@@ -110,7 +134,10 @@ def owner_name(job: Job, role: str) -> str | None:
 
 def _job_fields(job: Job, fin: JobFinancials, issues: list[Issue]) -> dict:
     top = max(issues, key=lambda i: i.amount, default=None)
+    booked = ledger_profit(fin)
     return {
+        "ledger_profit": booked["profit"],
+        "ledger_margin_pct": booked["margin_pct"],
         "job_number": job.job_number,
         "name": job.name,
         "customer": job.customer.name if job.customer else None,
@@ -147,6 +174,7 @@ def job_detail_response(
     lines: list[MoneyLine],
     revenue: RevenueBasis,
     cost: CostBasis,
+    as_of: date,
 ) -> JobDetailResponse:
     """One job with every revenue and cost figure side by side, and profit for the chosen pair."""
     return JobDetailResponse(
@@ -169,7 +197,7 @@ def job_detail_response(
             for b, (label, text) in COST_LABELS.items()
         ],
         profit=ProfitResponse(**profit(fin, revenue, cost), planned_margin_pct=job.planned_margin_pct),
-        issues=[issue_response(i) for i in sorted(issues, key=lambda i: i.amount, reverse=True)],
+        issues=[issue_response(i, as_of) for i in sorted(issues, key=lambda i: i.amount, reverse=True)],
         invoices=[line_response(l) for l in lines if l.kind == "customer_invoice"],
         vendor_bills=[line_response(l) for l in lines if l.kind == "vendor_bill"],
     )

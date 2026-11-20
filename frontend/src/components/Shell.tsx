@@ -206,6 +206,13 @@ function Crumb() {
   const [, first, second] = pathname.split('/')
   const section = SECTIONS.find((s) => s.to === `/${first}`) ?? SECTIONS[0]
   const Icon = section.icon
+  // An issue's address holds a number that means nothing to a reader. Its name does.
+  const issueId = first === 'issues' && second ? Number(second) : null
+  const issue = useQuery({
+    queryKey: ['issue', issueId],
+    queryFn: () => api.issue(issueId as number),
+    enabled: issueId !== null,
+  })
 
   return (
     <div className="flex min-w-0 items-center gap-2 text-ink-2">
@@ -216,7 +223,13 @@ function Crumb() {
             {section.label}
           </Link>
           <ChevronRight {...ICON} />
-          <span className="truncate font-mono text-[0.8125rem] font-medium text-ink">{second}</span>
+          {issueId === null ? (
+            <span className="truncate font-mono text-[0.8125rem] font-medium text-ink">{second}</span>
+          ) : (
+            <span className="truncate font-medium text-ink">
+              {issue.data ? [issue.data.title, issue.data.document].filter(Boolean).join(', ') : ''}
+            </span>
+          )}
         </>
       ) : (
         <span className="font-medium text-ink">{section.label}</span>

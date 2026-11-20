@@ -52,13 +52,21 @@ export function dateTime(isoTimestamp: string): string {
   })
 }
 
+/** Today's date as the API writes dates, in this reader's own time zone. */
+export function isoToday(): string {
+  const now = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
 export function daysBetween(laterIso: string, earlierIso: string): number {
   return Math.round((parse(laterIso).getTime() - parse(earlierIso).getTime()) / 86_400_000)
 }
 
 /** Source statuses arrive as SHOUTING_SNAKE_CASE. Show them as plain words. */
 export function words(status: string | null | undefined): string {
-  return (status ?? '').toLowerCase().replaceAll('_', ' ')
+  const text = (status ?? '').toLowerCase().replaceAll('_', ' ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 const STAGES: Record<string, string> = {

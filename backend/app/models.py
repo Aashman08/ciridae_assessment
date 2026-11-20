@@ -26,7 +26,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, column_property, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, aliased, column_property, mapped_column, relationship
 
 RAW = "raw"
 RECON = "recon"
@@ -264,6 +264,8 @@ class Issue(Base):
     owner: Mapped[str] = mapped_column(String(120), index=True)
     status: Mapped[str] = mapped_column(String(20), default="open", index=True)  # open | assigned | resolved | cleared
     resolution_note: Mapped[str | None] = mapped_column(Text)
+    # A date someone set to come back to this. Theirs to set and clear; a sync leaves it alone.
+    follow_up_on: Mapped[date | None] = mapped_column(Date)
     first_seen_run_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.sync_run.id"))
     last_seen_run_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.sync_run.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -337,5 +339,19 @@ Issue.note_count = column_property(
     select(func.count(IssueEvent.id))
     .where(IssueEvent.issue_id == Issue.id, IssueEvent.kind == "commented")
     .correlate_except(IssueEvent)
+    .scalar_subquery()
+)
+
+# How many other open issues are about the same invoice or bill. One document can
+# trip several checks, and the reader needs to know it is the same money each time.
+_other_issue = aliased(Issue)
+Issue.same_document = column_property(
+    select(func.count(_other_issue.id))
+    .where(
+        _other_issue.document == Issue.document,
+        _other_issue.id != Issue.id,
+        _other_issue.status.in_(("open", "assigned")),
+    )
+    .correlate_except(_other_issue)
     .scalar_subquery()
 )

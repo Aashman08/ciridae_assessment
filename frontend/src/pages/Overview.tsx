@@ -33,6 +33,11 @@ function IssuesByType({ summary }: { summary: Summary }) {
           All issues
         </Link>
       </CardHead>
+      <p className="px-5 pb-3 text-[0.8125rem] text-ink-2">
+        {summary.flagged_documents.count} invoices and bills are flagged, with{' '}
+        <span className="font-mono text-xs text-ink">{money(summary.flagged_documents.amount)}</span> unpaid on them. One
+        document can sit under several types, so the amounts below overlap and do not add up
+      </p>
       <div className="overflow-x-auto">
         <table className="data-table">
           <thead>
@@ -54,7 +59,7 @@ function IssuesByType({ summary }: { summary: Summary }) {
                     {type.title}
                   </Link>
                 </td>
-                <td className="text-ink-2 capitalize">{type.severity}</td>
+                <td className={`capitalize ${type.severity === 'high' ? '' : 'text-ink-2'}`}>{type.severity}</td>
                 <td className="num">{type.count}</td>
                 <td className="num">{Number(type.amount) > 0 ? money(type.amount) : ''}</td>
                 <td className="max-md:hidden">

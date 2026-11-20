@@ -190,12 +190,12 @@ def _dump(model: Any, *fields: str) -> dict:
 
 JOB_FIELDS = (
     "job_number", "name", "customer", "stage", "branch", "ops_manager", "account_executive", "contract_value",
-    "budget", "planned_margin_pct", "ledger_revenue", "invoiced", "collected", "owed", "past_due", "ops_cost",
+    "budget", "planned_margin_pct", "ledger_profit", "ledger_margin_pct", "ledger_revenue", "invoiced", "collected", "owed", "past_due", "ops_cost",
     "ledger_cost", "unpaid_bills", "issue_count",
 )
 ISSUE_FIELDS = (
     "id", "title", "severity", "job_number", "job_name", "document", "due_on", "amount", "summary", "owner",
-    "status", "note_count",
+    "status", "note_count", "follow_up_on", "days_late",
 )
 LINE_FIELDS = ("doc_number", "company", "job_number", "amount", "paid_amount", "open_amount", "line_date", "due_date", "status")
 

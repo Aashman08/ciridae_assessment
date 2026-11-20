@@ -1,6 +1,9 @@
 import type { UseQueryResult } from '@tanstack/react-query'
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, Search } from 'lucide-react'
+import { Fragment, useEffect, useId, useRef, useState } from 'react'
+import type { ButtonHTMLAttributes, CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { ApiError } from '../lib/api'
+import type { Order } from '../lib/api'
 import { money } from '../lib/format'
 import { buttonClass, cx } from '../lib/styles'
 import { useRunSync } from '../lib/sync'
@@ -209,5 +212,272 @@ export function BarRow({ label, amount, max, tone = 'solid' }: BarRowProps) {
         {money(amount)}
       </span>
     </div>
+  )
+}
+
+interface SortHeaderProps<Key extends string> {
+  label: string
+  /** The sort this column stands for. */
+  by: Key
+  /** The sort in force, and its direction. */
+  sort: Key
+  order: Order
+  /** Which way a first click sorts. Money and counts start largest first; names and dates start at the top. */
+  first?: Order
+  onSort: (by: Key, order: Order) => void
+  numeric?: boolean
+  className?: string
+}
+
+/** A column heading that sorts the table. Click again to turn it round. */
+export function SortHeader<Key extends string>({
+  label,
+  by,
+  sort,
+  order,
+  first = 'desc',
+  onSort,
+  numeric = false,
+  className,
+}: SortHeaderProps<Key>) {
+  const active = sort === by
+  const next = active ? (order === 'asc' ? 'desc' : 'asc') : first
+  const Arrow = active ? (order === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+  return (
+    <th className={cx(numeric && 'num', className)} aria-sort={active ? (order === 'asc' ? 'ascending' : 'descending') : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(by, next)}
+        className={cx(
+          'group inline-flex items-center gap-1 rounded transition-colors duration-150 ease-out hover:text-ink',
+          numeric && 'flex-row-reverse',
+          active && 'text-ink',
+        )}
+      >
+        {label}
+        <Arrow
+          size="0.75rem"
+          strokeWidth={1.5}
+          aria-hidden
+          className={cx('shrink-0', !active && 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100')}
+        />
+      </button>
+    </th>
+  )
+}
+
+export interface SelectOption {
+  value: string
+  label: string
+  /** Options with the same group are listed together under it. */
+  group?: string
+}
+
+interface SelectProps {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  /** When given, a first option standing for no filter. */
+  all?: string
+  options: SelectOption[]
+  /** Width of the control. */
+  className?: string
+  /** The label sits beside the control in a row of filters, and above it in a form. */
+  layout?: 'inline' | 'stacked'
+}
+
+/**
+ * A dropdown drawn with the app's own parts, where a browser's built-in one
+ * would bring the operating system's menu with it. Works with the keyboard:
+ * arrows move, Enter or Space chooses, Escape closes.
+ */
+export function Select({ label, value, onChange, all, options, className = 'w-48', layout = 'inline' }: SelectProps) {
+  const id = useId()
+  const button = useRef<HTMLButtonElement>(null)
+  const list = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const [place, setPlace] = useState<CSSProperties>({})
+
+  const choices: SelectOption[] = all === undefined ? options : [{ value: '', label: all }, ...options]
+  const chosen = choices.find((choice) => choice.value === value)
+
+  function show() {
+    const box = button.current?.getBoundingClientRect()
+    if (!box) return
+    // The list is fixed to the window so nothing it sits inside can cut it off.
+    // It opens downwards unless there is more room above.
+    const below = window.innerHeight - box.bottom
+    const upwards = below < 240 && box.top > below
+    setPlace({
+      left: box.left,
+      minWidth: box.width,
+      maxHeight: Math.max(120, (upwards ? box.top : below) - 16),
+      ...(upwards ? { bottom: window.innerHeight - box.top + 4 } : { top: box.bottom + 4 }),
+    })
+    setActive(Math.max(0, choices.findIndex((choice) => choice.value === value)))
+    setOpen(true)
+  }
+
+  function choose(index: number) {
+    setOpen(false)
+    if (choices[index] && choices[index].value !== value) onChange(choices[index].value)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    function outside(event: MouseEvent) {
+      const target = event.target as Node
+      if (!button.current?.contains(target) && !list.current?.contains(target)) close()
+    }
+    function scrolled(event: Event) {
+      // Scrolling the list itself is fine. Scrolling anything else would leave it stranded.
+      if (!list.current?.contains(event.target as Node)) close()
+    }
+    document.addEventListener('mousedown', outside)
+    window.addEventListener('resize', close)
+    window.addEventListener('scroll', scrolled, true)
+    return () => {
+      document.removeEventListener('mousedown', outside)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', scrolled, true)
+    }
+  }, [open])
+
+  // Keep the option the keyboard is on in view.
+  useEffect(() => {
+    if (open) list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [open, active])
+
+  function keyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!open) {
+      if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) {
+        event.preventDefault()
+        show()
+      }
+      return
+    }
+    const last = choices.length - 1
+    const moves: Record<string, number> = {
+      ArrowDown: Math.min(last, active + 1),
+      ArrowUp: Math.max(0, active - 1),
+      Home: 0,
+      End: last,
+    }
+    if (event.key in moves) {
+      event.preventDefault()
+      setActive(moves[event.key])
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      choose(active)
+    } else if (event.key === 'Escape') {
+      // Close the list only. Inside a dialog, Escape must not also close the dialog.
+      event.preventDefault()
+      event.stopPropagation()
+      setOpen(false)
+    } else if (event.key === 'Tab') {
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div className={cx('flex min-w-0 text-[0.8125rem]', layout === 'inline' ? 'items-center gap-2' : 'flex-col gap-2')}>
+      <span id={`${id}-label`} className="text-ink-2">
+        {label}
+      </span>
+      <button
+        ref={button}
+        type="button"
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={`${id}-list`}
+        aria-labelledby={`${id}-label ${id}-value`}
+        aria-activedescendant={open ? `${id}-${active}` : undefined}
+        onClick={() => (open ? setOpen(false) : show())}
+        onKeyDown={keyDown}
+        className={cx(
+          'grid grid-cols-[minmax(0,1fr)_1rem] items-center gap-2 rounded-lg border border-hair pr-2 pl-3 text-left text-ink',
+          'transition-colors duration-150 ease-out hover:bg-raised',
+          // In a row of filters it matches the other controls; in a form it matches the other fields.
+          layout === 'inline' ? cx('h-8 bg-card', className) : 'h-9 w-full bg-bg text-[1rem]',
+        )}
+      >
+        <span id={`${id}-value`} className="truncate">
+          {chosen?.label ?? ''}
+        </span>
+        <ChevronDown size="1rem" strokeWidth={1.5} aria-hidden className="text-muted" />
+      </button>
+
+      {open && (
+        <div
+          ref={list}
+          id={`${id}-list`}
+          role="listbox"
+          aria-labelledby={`${id}-label`}
+          style={place}
+          className="fixed z-50 flex flex-col gap-0.5 overflow-y-auto rounded-xl border border-hair bg-card p-1 text-[0.8125rem] shadow-float"
+        >
+          {choices.map((choice, index) => (
+            <Fragment key={choice.value}>
+              {choice.group && choice.group !== choices[index - 1]?.group && (
+                <div className="px-2 pt-2 pb-1 text-xs leading-4 text-muted">{choice.group}</div>
+              )}
+              <div
+                id={`${id}-${index}`}
+                role="option"
+                aria-selected={choice.value === value}
+                data-active={index === active}
+                onMouseEnter={() => setActive(index)}
+                // Chosen on mouse down, before the button can lose focus and close the list.
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  choose(index)
+                }}
+                className={cx(
+                  'grid h-8 shrink-0 cursor-pointer grid-cols-[minmax(0,1fr)_1rem] items-center gap-3 rounded-lg px-2 whitespace-nowrap',
+                  index === active && 'bg-raised',
+                )}
+              >
+                {choice.label}
+                {choice.value === value && <Check size="1rem" strokeWidth={1.5} aria-hidden />}
+              </div>
+            </Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** A search box that reports what was typed once the typing pauses. */
+export function SearchBox({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const [text, setText] = useState(value)
+  const [shown, setShown] = useState(value)
+  // The address bar can change underneath the box, for example with the back button.
+  if (value !== shown) {
+    setShown(value)
+    setText(value)
+  }
+
+  useEffect(() => {
+    if (text.trim() === value) return
+    const timer = setTimeout(() => onChange(text.trim()), 250)
+    return () => clearTimeout(timer)
+  }, [text, value, onChange])
+
+  return (
+    <label className="relative flex items-center">
+      <span className="sr-only">{label}</span>
+      <Search size="1rem" strokeWidth={1.5} aria-hidden className="pointer-events-none absolute left-2 text-muted" />
+      <input
+        type="search"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        placeholder={label}
+        className="h-8 w-56 rounded-lg border border-hair bg-card pr-2 pl-8 text-[0.8125rem] placeholder:text-muted"
+      />
+    </label>
   )
 }

@@ -17,6 +17,7 @@ from app.schemas import (
     IssueFilters,
     IssueResponse,
     IssueTypeResponse,
+    PersonResponse,
     IssueTypeUpdate,
     JobDetailResponse,
     JobFilters,
@@ -228,13 +229,19 @@ async def get_issue(issue_id: int, request: Request) -> IssueDetailResponse:
 @router.post(
     "/issues/{issue_id}/actions",
     tags=["Issues"],
-    summary="Assign, comment on, resolve or reopen an issue",
+    summary="Update, resolve or reopen an issue",
     response_model=IssueDetailResponse,
     responses={400: ERROR_400, 404: ERROR_404, 409: ERROR_409},
 )
 async def act_on_issue(issue_id: int, payload: IssueAction, request: Request) -> IssueDetailResponse:
     async with create_recon_client(request.state.request_id) as client:
         return await client.act_on_issue(issue_id, payload)
+
+
+@router.get("/people", tags=["Issues"], summary="Who an issue can be assigned to", response_model=list[PersonResponse])
+async def list_people(request: Request) -> list[PersonResponse]:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.list_people()
 
 
 @router.get("/issue-types", tags=["Issue Types"], response_model=list[IssueTypeResponse])

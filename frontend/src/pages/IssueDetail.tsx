@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Fragment, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { UpdateDialog } from '../components/UpdateDialog'
 import { Button, Card, CardHead, Empty, Loaded, PageHead } from '../components/ui'
 import { api } from '../lib/api'
 import type { IssueDetail as Issue } from '../lib/api'
-import { dateTime, money, shortDate, words } from '../lib/format'
+import { dateTime, longDate, money, shortDate, words } from '../lib/format'
 import { useViewer } from '../lib/viewer'
 
 const KINDS: Record<string, string> = {
@@ -20,6 +20,7 @@ const EVENTS: Record<string, string> = {
   opened: 'Opened',
   commented: 'Note',
   assigned: 'Assigned',
+  follow_up: 'Follow-up',
   resolved: 'Resolved',
   reopened: 'Reopened',
   cleared: 'Cleared',
@@ -36,7 +37,7 @@ function SourceRow({ recordId }: { recordId: number }) {
       {(data) => (
         <div className="px-5 py-4">
           <p className="pb-3 text-xs leading-4 text-muted">
-            Exactly as {SYSTEMS[data.system] ?? data.system} returned it, from its {words(data.table_name)} table
+            Exactly as {SYSTEMS[data.system] ?? data.system} returned it, from its {words(data.table_name).toLowerCase()} table
           </p>
           <dl className="grid grid-cols-1 gap-x-8 gap-y-1 font-mono text-xs leading-5 sm:grid-cols-2">
             {Object.entries(data.payload)
@@ -113,6 +114,81 @@ function Evidence({ issue }: { issue: Issue }) {
   )
 }
 
+// Why the person named as owner has the issue.
+const OWNER_ROLES: Record<Issue['owner_role'], string> = {
+  ops_manager: "The job's ops manager",
+  account_executive: "The job's account executive, because it has no ops manager",
+  finance: 'Finance, because the job has no ops manager or account executive',
+  assigned: 'Assigned by hand',
+}
+
+/** Who has it, why, and the dates that matter, as one strip across the top of the page. */
+function Ownership({ issue }: { issue: Issue }) {
+  const facts: { label: string; value: string; figure?: boolean; attention?: boolean }[] = [
+    { label: 'Owner', value: issue.owner },
+    { label: 'Why them', value: OWNER_ROLES[issue.owner_role] },
+    { label: 'Severity', value: words(issue.severity) },
+    { label: 'First found', value: longDate(issue.first_seen_on) },
+  ]
+  if (issue.due_on) facts.push({ label: 'Due', value: longDate(issue.due_on) })
+  if (issue.days_late) facts.push({ label: 'Days late', value: String(issue.days_late), figure: true, attention: true })
+  facts.push({ label: 'Follow up on', value: issue.follow_up_on ? longDate(issue.follow_up_on) : 'No date set' })
+
+  return (
+    <Card>
+      <dl className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-x-6 gap-y-4 p-5">
+        {facts.map((fact) => (
+          <div key={fact.label} className="flex min-w-0 flex-col gap-1">
+            <dt className="text-[0.8125rem] text-ink-2">{fact.label}</dt>
+            <dd className={`${fact.figure ? 'font-mono text-[0.8125rem] tabular-nums' : ''} ${fact.attention ? 'text-accent-ink' : ''}`}>
+              {fact.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </Card>
+  )
+}
+
+/** The other open issues about the same invoice or bill. It is the same money each time. */
+function SameDocument({ issue }: { issue: Issue }) {
+  const navigate = useNavigate()
+  if (issue.related.length === 0) return null
+
+  return (
+    <Card>
+      <CardHead title={`Also flagged on ${issue.document}`} />
+      <p className="px-5 pb-3 text-[0.8125rem] text-ink-2">
+        These are about the same document, so their amounts are the same dollars and should not be added together
+      </p>
+      <div className="overflow-x-auto">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Issue</th>
+              <th>Severity</th>
+              <th className="num">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {issue.related.map((other) => (
+              <tr key={other.id} className="clickable" onClick={() => navigate(`/issues/${other.id}`)}>
+                <td>
+                  <Link to={`/issues/${other.id}`} className="font-medium" onClick={(e) => e.stopPropagation()}>
+                    {other.title}
+                  </Link>
+                </td>
+                <td className={`capitalize ${other.severity === 'high' ? '' : 'text-ink-2'}`}>{other.severity}</td>
+                <td className="num">{Number(other.amount) > 0 ? money(other.amount) : ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
 function History({ issue }: { issue: Issue }) {
   return (
     <Card>
@@ -164,8 +240,7 @@ export function IssueDetail() {
                   ) : (
                     <span>No job</span>
                   )}
-                  <span>Owner: {data.owner}</span>
-                  <span className={`capitalize ${active ? 'text-accent-ink' : ''}`}>{words(data.status)}</span>
+                  <span className={active ? 'text-accent-ink' : ''}>{words(data.status)}</span>
                 </span>
               }
             >
@@ -179,6 +254,8 @@ export function IssueDetail() {
                 </Button>
               )}
             </PageHead>
+
+            <Ownership issue={data} />
 
             <div className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-[minmax(0,1fr)_25rem]">
               <div className="flex min-w-0 flex-col gap-4">
@@ -194,6 +271,7 @@ export function IssueDetail() {
                     </p>
                   </div>
                 </Card>
+                <SameDocument issue={data} />
                 <Evidence issue={data} />
               </div>
               <History issue={data} />
