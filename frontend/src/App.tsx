@@ -6,6 +6,7 @@ import { api } from './lib/api'
 import { Ask } from './pages/Ask'
 import { Connectors } from './pages/Connectors'
 import { Issues } from './pages/Issues'
+import { Activity } from './pages/Activity'
 import { IssueTypes } from './pages/IssueTypes'
 import { JobDetail } from './pages/JobDetail'
 import { Jobs } from './pages/Jobs'
@@ -38,6 +39,7 @@ export function App() {
         <Route path="issues/:issueId" element={<IssueRedirect />} />
         <Route path="invoices" element={<Lines key="invoices" kind="customer_invoice" />} />
         <Route path="bills" element={<Lines key="bills" kind="vendor_bill" />} />
+        <Route path="activity" element={<Activity />} />
         <Route path="issue-types" element={<IssueTypes />} />
         <Route path="connectors" element={<Connectors />} />
         <Route path="*" element={<Empty>There is no page at this address</Empty>} />

@@ -53,6 +53,7 @@ export function tagTone(key: string): Tone {
     case 'urgent':
     case 'over_contract':
     case 'past_finish':
+    case 'promise_missed':
       return 'red'
     case 'discount':
       return 'green'

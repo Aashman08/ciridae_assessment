@@ -32,7 +32,7 @@ const OWNER_ROLES: Record<Item['owner_role'], string> = {
   assigned: 'assigned by hand',
 }
 
-function Tag({ children, tone }: { children: ReactNode; tone: Tone }) {
+export function Tag({ children, tone }: { children: ReactNode; tone: Tone }) {
   return <span className={cx('inline-flex h-6 items-center rounded-md px-2 text-xs whitespace-nowrap', TONE[tone])}>{children}</span>
 }
 

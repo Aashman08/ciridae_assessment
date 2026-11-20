@@ -5,6 +5,7 @@ import {
   ChevronsUpDown,
   FileText,
   HardHat,
+  History,
   LayoutDashboard,
   ListChecks,
   MessageCircleQuestion,
@@ -43,6 +44,7 @@ const SECTIONS: Section[] = [
   { to: '/issues', label: 'Issues', icon: TriangleAlert },
   { to: '/invoices', label: 'Customer invoices', icon: Receipt },
   { to: '/bills', label: 'Vendor bills', icon: FileText },
+  { to: '/activity', label: 'Activity', icon: History },
   { to: '/issue-types', label: 'Issue types', icon: ListChecks, managesChecks: true },
 ]
 

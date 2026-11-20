@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TypeVar
 
-from sqlalchemy import Date, and_, case, cast, delete, exists, func, or_, select, text
+from sqlalchemy import Date, Integer, String, and_, case, cast, delete, exists, func, literal, null, or_, select, text, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
@@ -21,10 +21,11 @@ import logging
 from agents.exceptions import AgentsException
 from openai import APIStatusError, AuthenticationError, OpenAIError, RateLimitError
 
-from app import assistant, coding, database, drafts, review
+from app import assistant, coding, commitments, database, drafts, review
 from app.coding import CodingCase
 from app.connector import Connector, ExportConnector
 from app.errors import (
+    CommitmentNotFoundError,
     AskFailedError,
     AskNotConfiguredError,
     AskProviderError,
@@ -64,12 +65,24 @@ from app.models import (
     Job,
     JobFinancials,
     JobOwner,
+    Commitment,
     MoneyLine,
+    Note,
+    NoteReading,
+    SettingChange,
     SourceRecord,
     SyncRun,
 )
-from app.normalize import normalize
+from app.normalize import normalize, person_name
 from app.schemas import (
+    ActivityEntry,
+    ActivityFilters,
+    CommitmentAction,
+    CommitmentFilters,
+    CommitmentResponse,
+    ItemTag,
+    NoteReadingStatus,
+    NotesReadResponse,
     AskMessage,
     AskRequest,
     AskResponse,
@@ -179,9 +192,31 @@ def to_day(value) -> date | None:
     return date.fromisoformat(str(value)[:10]) if value else None
 
 
+def commitment_state(as_of: date):
+    """SQL: where a commitment stands on the day the figures are from. Done if a person said
+    so; kept if it was a payment promise and the invoice has since been paid; missed once its
+    date has passed; due soon within a week; otherwise open."""
+    paid_in_full = exists().where(
+        MoneyLine.kind == INVOICE, MoneyLine.doc_number == Note.document, MoneyLine.amount > 0,
+        MoneyLine.paid_amount >= MoneyLine.amount,
+    )
+    paid_since = exists().where(
+        MoneyLine.kind == "customer_payment", MoneyLine.doc_number == Note.document,
+        MoneyLine.line_date >= cast(Note.written_at, Date),
+    )
+    kept = and_(Commitment.kind == "payment_promised", Note.document.is_not(None), or_(paid_in_full, paid_since))
+    return case(
+        (Commitment.done_at.is_not(None), "done"),
+        (kept, "kept"),
+        (Commitment.due_on < as_of, "missed"),
+        (Commitment.due_on <= as_of + timedelta(days=7), "due_soon"),
+        else_="open",
+    )
+
+
 def _person(email: str | None) -> str:
     """A name from a work address: jenna.okafor@… is Jenna Okafor."""
-    return " ".join(part.capitalize() for part in (email or "unknown").split("@")[0].split("."))
+    return person_name(email)
 
 
 def _provider_message(error: APIStatusError) -> str:
@@ -555,17 +590,207 @@ class ReconClient:
         issue_type = await self.db.get(IssueType, key)
         if issue_type is None:
             raise IssueTypeNotFoundError(key)
-        if payload.enabled is not None:
+        changes = []
+        if payload.enabled is not None and payload.enabled != issue_type.enabled:
             issue_type.enabled = payload.enabled
+            changes.append("Switched on" if payload.enabled else "Switched off")
         if payload.tolerance is not None:
             if issue_type.tolerance_unit is None:
                 raise InvalidRequestError(f"'{issue_type.title}' has no tolerance to set.")
             if issue_type.tolerance_unit == "days" and (payload.tolerance < 1 or payload.tolerance != int(payload.tolerance)):
                 raise InvalidRequestError("A tolerance in days must be a whole number of at least 1.")
-            issue_type.tolerance = payload.tolerance
+            if payload.tolerance != issue_type.tolerance:
+                unit = f" {issue_type.tolerance_unit}" if issue_type.tolerance_unit == "days" else ""
+                before = format(issue_type.tolerance.normalize(), "f") if issue_type.tolerance is not None else "none"
+                changes.append(f"Tolerance changed from {before}{unit} to {format(payload.tolerance.normalize(), 'f')}{unit}")
+                issue_type.tolerance = payload.tolerance
+        # Every change to what a check looks for goes in the activity log, with who made it.
+        for summary in changes:
+            self.db.add(SettingChange(type_key=key, actor=payload.actor, summary=summary))
         await self.db.commit()
         found = await self._found_by_type(key)
         return issue_type_response(issue_type, *found.get(key, (0, ZERO)))
+
+    # --- Commitments read from notes ----------------------------------------------
+
+    async def list_commitments(self, filters: CommitmentFilters) -> ListResponse[CommitmentResponse]:
+        """Promises and waits the assistant found in notes, the ones needing attention first.
+        Where each stands is worked out here from the records, never by the model."""
+        run = await self._current_run()
+        state = commitment_state(run.as_of)
+        where = []
+        if filters.job:
+            where.append(Job.job_number == filters.job.upper())
+        if filters.owner:
+            where.append(Note.job_id.in_(select(Job.id).where(owned_by(filters.owner))))
+        if filters.kind:
+            where.append(Commitment.kind == filters.kind)
+        if filters.state == "active":
+            where.append(state.in_(("missed", "due_soon", "open")))
+        elif filters.state != "all":
+            where.append(state == filters.state)
+
+        base = select(Commitment).join(Note, Note.id == Commitment.note_id).outerjoin(Job, Job.id == Note.job_id).where(*where)
+        total = await self.db.scalar(select(func.count()).select_from(base.subquery()))
+        urgency = case({"missed": 0, "due_soon": 1, "open": 2, "kept": 3, "done": 4}, value=state)
+        rows = await self.db.execute(
+            select(Commitment, Note, Job.job_number, Job.name, state.label("state"))
+            .join(Note, Note.id == Commitment.note_id)
+            .outerjoin(Job, Job.id == Note.job_id)
+            .where(*where)
+            .order_by(urgency, Commitment.due_on.asc().nulls_last(), Commitment.id)
+            .offset(filters.offset)
+            .limit(filters.limit)
+        )
+        return self._page([self._commitment(*row) for row in rows], total, filters)
+
+    @staticmethod
+    def _commitment(c: Commitment, note: Note, job_number: str | None, job_name: str | None, state: str) -> CommitmentResponse:
+        return CommitmentResponse(
+            id=c.id, kind=c.kind, who=c.who, what=c.what, due_on=c.due_on, state=state,
+            job_number=job_number, job_name=job_name, document=note.document,
+            noted_by=note.written_by, noted_on=note.written_at.date(), noted_in=note.source, note=note.body,
+        )
+
+    async def act_on_commitment(self, commitment_id: int, payload: CommitmentAction) -> CommitmentResponse:
+        """Mark a commitment done, or reopen it. A payment promise is kept by the payment
+        itself, but a person may still close one the records cannot see."""
+        commitment = await self.db.get(Commitment, commitment_id)
+        if commitment is None:
+            raise CommitmentNotFoundError(commitment_id)
+        if payload.action == "done":
+            if commitment.done_at is not None:
+                raise InvalidStateError("This is already marked done.")
+            commitment.done_by, commitment.done_at = payload.actor, func.now()
+        else:
+            if commitment.done_at is None:
+                raise InvalidStateError("This is not marked done, so there is nothing to reopen.")
+            commitment.done_by, commitment.done_at = None, None
+        await self.db.commit()
+        page = await self.list_commitments(CommitmentFilters(state="all", limit=500))
+        return next(c for c in page.data if c.id == commitment_id)
+
+    def _unread_notes(self):
+        """SQL: notes the assistant has not read, or whose text has changed since it did."""
+        return select(Note).outerjoin(NoteReading, NoteReading.note_id == Note.id).where(
+            or_(NoteReading.note_id.is_(None), NoteReading.body_hash != func.md5(Note.body))
+        )
+
+    async def note_reading_status(self) -> NoteReadingStatus:
+        await self._current_run()
+        unread = await self.db.scalar(select(func.count()).select_from(self._unread_notes().subquery()))
+        total = await self.db.scalar(select(func.count(Note.id)))
+        return NoteReadingStatus(unread=unread, read=total - unread)
+
+    async def read_notes(self) -> NotesReadResponse:
+        """Have the assistant read every note it has not read yet for commitments, and keep
+        what it finds once checked. A note already read is never sent again unless it changed."""
+        await self._current_run()
+        rows = (
+            await self.db.execute(
+                self._unread_notes().add_columns(Job.job_number, Job.name).outerjoin(Job, Job.id == Note.job_id).order_by(Note.id)
+            )
+        ).all()
+        if not rows:
+            return NotesReadResponse(notes_read=0, commitments_found=0)
+        notes = [
+            {
+                "note_id": note.id, "written_on": note.written_at.date(), "written_by": note.written_by,
+                "written_in": "project system" if note.source == "project" else "accounting",
+                "job_number": job_number, "job_name": job_name, "invoice": note.document, "text": note.body,
+            }
+            for note, job_number, job_name in rows
+        ]
+        found = await self._with_model(commitments.read(notes))
+
+        ids = [note["note_id"] for note in notes]
+        # A note read again replaces what was found in it before.
+        await self.db.execute(delete(Commitment).where(Commitment.note_id.in_(ids)))
+        await self.db.execute(delete(NoteReading).where(NoteReading.note_id.in_(ids)))
+        for note, *_ in rows:
+            self.db.add(NoteReading(note_id=note.id, body_hash=await self.db.scalar(select(func.md5(note.body)))))
+        for entry in found:
+            self.db.add(Commitment(**entry))
+        await self.db.commit()
+        return NotesReadResponse(notes_read=len(ids), commitments_found=len(found))
+
+    async def _job_commitments(self, job_number: str) -> list[dict]:
+        """A job's commitments as the review and the drafts are shown them."""
+        page = await self.list_commitments(CommitmentFilters(job=job_number, state="all", limit=100))
+        return [
+            {
+                "kind": c.kind, "who": c.who, "what": c.what, "due_on": str(c.due_on) if c.due_on else None,
+                "state": c.state, "invoice": c.document, "noted_by": c.noted_by, "noted_on": str(c.noted_on),
+            }
+            for c in page.data
+        ]
+
+    # --- Activity ----------------------------------------------------------------
+
+    async def list_activity(self, filters: ActivityFilters) -> ListResponse[ActivityEntry]:
+        """Notes from the project system and accounting, and everything people, syncs and the
+        assistant did in this app, in one list, newest first. Filtered and paged in SQL."""
+        await self._current_run()
+        notes = select(
+            Note.written_at.label("at"), Note.source.label("source"), literal("note", String).label("kind"),
+            Note.written_by.label("by"), Note.body.label("text"), null().cast(String).label("about"),
+            Note.job_id.label("job_id"), Note.document.label("document"),
+            # Which table and which row, so entries made in the same instant still come in a fixed order.
+            literal(1, Integer).label("rank"), Note.id.label("ref"),
+        )
+        events = (
+            select(
+                IssueEvent.created_at, literal("app", String), IssueEvent.kind, IssueEvent.actor, IssueEvent.note,
+                IssueType.title, Issue.job_id, Issue.document, literal(2, Integer), IssueEvent.id,
+            )
+            .join(Issue, Issue.id == IssueEvent.issue_id)
+            .join(IssueType, IssueType.key == Issue.type_key)
+        )
+        settings = select(
+            SettingChange.created_at, literal("app", String), literal("setting_changed", String), SettingChange.actor,
+            SettingChange.summary, IssueType.title, null().cast(Integer), null().cast(String), literal(3, Integer), SettingChange.id,
+        ).join(IssueType, IssueType.key == SettingChange.type_key)
+        done = (
+            select(
+                Commitment.done_at, literal("app", String), literal("commitment_done", String), Commitment.done_by,
+                Commitment.what, null().cast(String), Note.job_id, Note.document, literal(4, Integer), Commitment.id,
+            )
+            .join(Note, Note.id == Commitment.note_id)
+            .where(Commitment.done_at.is_not(None))
+        )
+        feed = union_all(notes, events, settings, done).subquery()
+
+        where = []
+        if filters.job:
+            where.append(feed.c.job_id == select(Job.id).where(Job.job_number == filters.job).scalar_subquery())
+        if filters.owner:
+            where.append(feed.c.job_id.in_(select(Job.id).where(owned_by(filters.owner))))
+        if filters.person:
+            where.append(func.lower(feed.c.by) == filters.person.lower())
+        if filters.source:
+            where.append(feed.c.source == filters.source)
+        if filters.kind:
+            where.append(feed.c.kind == filters.kind)
+        if filters.people_only:
+            where.append(feed.c.by != "system")
+
+        total = await self.db.scalar(select(func.count()).select_from(feed).where(*where))
+        rows = await self.db.execute(
+            select(feed, Job.job_number, Job.name)
+            .outerjoin(Job, Job.id == feed.c.job_id)
+            .where(*where)
+            .order_by(feed.c.at.desc(), feed.c.rank.desc(), feed.c.ref.desc())
+            .offset(filters.offset)
+            .limit(filters.limit)
+        )
+        entries = [
+            ActivityEntry(
+                at=row.at, source=row.source, kind=row.kind, by=row.by, text=row.text, about=row.about,
+                job_number=row.job_number, job_name=row.name, document=row.document,
+            )
+            for row in rows
+        ]
+        return self._page(entries, total, filters)
 
     # --- Customers ---------------------------------------------------------------
 
@@ -741,6 +966,7 @@ class ReconClient:
             "owed_by_customer": str(fin.owed),
         }
         about["project_notes"] = await self._project_notes(job)
+        about["commitments"] = await self._job_commitments(job.job_number)
         answer = await self._with_model(review.review(about, items, run.as_of))
 
         await self.db.execute(delete(JobReview).where(JobReview.job_id == job.id))
@@ -840,6 +1066,24 @@ class ReconClient:
             )
         for item in items:
             item.source_notes = written.get(item.document or "", [])
+
+        # A customer who promised to pay and has not: the strongest reason to escalate.
+        if as_of is not None:
+            missed = await self.db.execute(
+                select(Note.document, Commitment.due_on)
+                .join(Note, Note.id == Commitment.note_id)
+                .where(
+                    Commitment.kind == "payment_promised", Note.document.in_(numbers),
+                    commitment_state(as_of) == "missed",
+                )
+                .order_by(Commitment.due_on)
+            )
+            promised = {number: due for number, due in missed}
+            for item in items:
+                if item.document in promised and item.kind == "invoice_unpaid":
+                    due = promised[item.document]
+                    label = f"Payment promised by {due.day} {due:%b}, not received" if due else "Payment promised, not received"
+                    item.tags.append(ItemTag(key="promise_missed", label=label))
         return items
 
     async def draft_for_item(self, key: str, payload: DraftRequest) -> DraftResponse:
@@ -852,6 +1096,9 @@ class ReconClient:
         if item.action.key not in ("message_customer", "message_colleague"):
             raise InvalidRequestError(f"{item.title} is not fixed by sending a message.")
         status = next((line.status for line in item.evidence if line.doc_number == item.document), None)
+        # What the team wrote about the job, and what was promised in those notes, so a message
+        # can say "the crane is booked for Monday" or "you said payment would go out Friday".
+        job = await self.db.scalar(select(Job).where(Job.job_number == item.job_number)) if item.job_number else None
         facts = {
             "problem": item.title,
             "what_is_wrong": item.details,
@@ -871,6 +1118,8 @@ class ReconClient:
                 for line in item.evidence
                 if line.kind in (INVOICE, BILL)
             ],
+            "project_notes": await self._project_notes(job) if job else [],
+            "commitments": await self._job_commitments(item.job_number) if item.job_number else [],
             "notes_so_far": [
                 *({"by": note.by, "on": note.on, "note": note.note} for note in item.source_notes),
                 *(

@@ -19,6 +19,10 @@ OUR_TABLES = {
     ("recon", "issue"),
     ("recon", "issue_evidence"),
     ("recon", "issue_event"),
+    ("recon", "note"),
+    ("recon", "setting_change"),
+    ("recon", "note_reading"),
+    ("recon", "commitment"),
     ("recon", "ask_exchange"),
     ("recon", "job_review"),
 }

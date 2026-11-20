@@ -8,6 +8,13 @@ from app.client import create_recon_client
 from app.financials import CostBasis, RevenueBasis
 from app.middleware import require_api_key
 from app.schemas import (
+    ActivityEntry,
+    ActivityFilters,
+    CommitmentAction,
+    CommitmentFilters,
+    CommitmentResponse,
+    NoteReadingStatus,
+    NotesReadResponse,
     AskRequest,
     AskResponse,
     CustomerBalance,
@@ -385,6 +392,66 @@ async def list_issue_types(request: Request) -> list[IssueTypeResponse]:
 async def update_issue_type(key: str, payload: IssueTypeUpdate, request: Request) -> IssueTypeResponse:
     async with create_recon_client(request.state.request_id) as client:
         return await client.update_issue_type(key, payload)
+
+
+@router.get(
+    "/commitments",
+    tags=["Commitments"],
+    summary="Promises and waits read from notes, the ones needing attention first",
+    response_model=ListResponse[CommitmentResponse],
+    responses={409: ERROR_409},
+)
+async def list_commitments(filters: Annotated[CommitmentFilters, Query()], request: Request) -> ListResponse[CommitmentResponse]:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.list_commitments(filters)
+
+
+@router.post(
+    "/commitments/{commitment_id}/actions",
+    tags=["Commitments"],
+    summary="Mark a commitment done, or reopen it",
+    response_model=CommitmentResponse,
+    responses={404: ERROR_404, 409: ERROR_409},
+)
+async def act_on_commitment(commitment_id: int, payload: CommitmentAction, request: Request) -> CommitmentResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.act_on_commitment(commitment_id, payload)
+
+
+@router.get(
+    "/notes/reading",
+    tags=["Commitments"],
+    summary="How many notes the assistant has not read yet",
+    response_model=NoteReadingStatus,
+    responses={409: ERROR_409},
+)
+async def note_reading_status(request: Request) -> NoteReadingStatus:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.note_reading_status()
+
+
+@router.post(
+    "/notes/read",
+    tags=["Commitments"],
+    summary="Have the assistant read new notes for promises and waits",
+    response_model=NotesReadResponse,
+    responses={409: ERROR_409, 502: ERROR_502, 503: ERROR_503},
+)
+async def read_notes(request: Request) -> NotesReadResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.read_notes()
+
+
+@router.get(
+    "/activity",
+    tags=["Activity"],
+    summary="Notes and everything done in this app, newest first",
+    response_model=ListResponse[ActivityEntry],
+    responses={409: ERROR_409},
+)
+async def list_activity(filters: Annotated[ActivityFilters, Query()], request: Request) -> ListResponse[ActivityEntry]:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.list_activity(filters)
 
 
 @router.get(

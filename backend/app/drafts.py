@@ -34,6 +34,11 @@ You are given the facts as JSON. Rules:
 - Say what is being asked for, once, plainly: for a customer, when payment will be
   made; for a colleague, the specific thing only they can do.
 - If the notes show earlier contact, refer to it in one sentence. Do not repeat it.
+- Commitments are promises read from notes, each with its state. If one about this
+  problem was missed, say so plainly in one sentence, such as "Payment was expected by
+  31 July and has not arrived", and ask for a new date. Do not mention a kept one.
+- Project notes are what the team wrote about the job. Mention one only if it bears on
+  what is being asked.
 - Make no promise or threat on Harborstone's behalf: no late fees, no stopping work,
   no discounts, no legal language.
 - Courteous and direct. No apology for writing, no filler, no exclamation marks.

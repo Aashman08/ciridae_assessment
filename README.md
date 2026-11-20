@@ -105,13 +105,14 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 | Screen | What it is for |
 | --- | --- |
 | Ask | Type a question in plain words. The answer comes with the records it rests on and the lookups that produced it. **Ask AI** in the top bar opens the same conversation beside any page, and it knows which job, issue or list is open |
-| Overview | Depends on who is signed in. **Finance** sees the ledger: profit, revenue, cost and cash by month, cost by cost code, the contract value split by where the money is, receivables by days late, profit by kind of work, and the lowest-margin jobs. **Operations** (every job) sees what each check found and the jobs to look at first. **An ops manager** sees their own to-do list, each row with a button that starts its next step |
+| Overview | Depends on who is signed in. **Finance** sees the ledger: profit, revenue, cost and cash by month, cost by cost code, the contract value split by where the money is, receivables by days late, profit by kind of work, payment promises read from notes and whether each was kept, the latest notes written in accounting, and the lowest-margin jobs. **Operations** (every job) sees what each check found, the jobs to look at first, and every promise and wait read from notes. **An ops manager** sees their own to-do list, each row with a button that starts its next step, the promises and waits on their jobs, and the latest notes and updates on them |
 | Jobs | Every job with its revenue, cost, profit and margin. Search by job, number or customer, and sort by any heading. A job's page holds everything about it, including **What needs doing**: the thing to do first, and every item with its next step |
-| Job | Revenue and cost figures side by side. Pick one of each and the profit and margin for that pair appear beside them |
+| Job | Revenue and cost figures side by side. Pick one of each and the profit and margin for that pair appear beside them. Under the documents, **Promises and waits from notes** (what the assistant read out of the job's notes, and whether each was kept or missed), then **Notes and activity**: project-system and accounting notes, updates logged here and everything that happened to the job's issues, newest first |
 | Issues | One row per job, with tags for what is wrong and the money flagged, counted once. Opening a row lists each thing to fix on that job. Several checks on one invoice or bill are one item with tags. Each item has a button that starts its next step: a drafted message, a suggested job for a bill, an assignment, a date to wait until, or a dismissal. Bills on no job are a group of their own |
 | Issue | What is wrong, what to do, the records behind it (an invoice or bill opens its preview in the side pane), plus its history |
 | Customer invoices, Vendor bills | Every invoice and bill across jobs |
 | Connectors | The three source systems with how much of each was read and when, and the email account a follow-up is sent with |
+| Activity | The audit log: every note from the project system and accounting and everything anyone did in this app, newest first, filterable by where it came from, who, what and job. What syncs did is hidden until switched on |
 | Issue types | The thirteen checks, with an on/off switch and tolerance for each. **Sync now** here applies a change straight away |
 
 | Folder | Holds |
@@ -137,7 +138,8 @@ to ours. It runs four steps in one transaction.
 2. **Normalize.** Each project is joined to its opportunity, customer,
    branch, budget and owners to make a job. Every cost entry, ledger entry,
    vendor bill, invoice and payment becomes one *money line* that points to
-   the source row it came from.
+   the source row it came from. Notes written in the project system and on
+   invoices in accounting are copied in with their job and invoice.
 3. **Total.** Per job: contract, budget, cost three ways, revenue from ledger
    to cash, owed and past due. Stored once per sync so runs can be compared.
 4. **Find issues.** Thirteen checks compare the systems. Each finding has a
@@ -149,7 +151,7 @@ database is a separate one, and the connection to it is read-only:
 | Schema | Tables |
 | --- | --- |
 | `raw` | `source_record` |
-| `recon` | `sync_run`, `company`, `job`, `job_owner`, `cost_code_map`, `money_line`, `job_financials`, `issue_type`, `issue`, `issue_evidence`, `issue_event`, `ask_exchange` |
+| `recon` | `sync_run`, `company`, `job`, `job_owner`, `cost_code_map`, `money_line`, `job_financials`, `issue_type`, `issue`, `issue_evidence`, `issue_event`, `note`, `note_reading`, `commitment`, `setting_change`, `job_review`, `ask_exchange` |
 
 ## API
 
@@ -184,16 +186,22 @@ such as `"246300.00"`. Errors always look like
 | POST | `/ask` | Ask a question in plain words. Returns the answer as plain text (`answer`) and laid out for display (`spec`), the lookups used and the records it rests on, and saves the exchange |
 | GET, DELETE | `/ask/history?asked_by=` | Read or clear one person's saved conversation |
 | GET | `/issue-types` | The checks, their settings and what each has found |
-| PATCH | `/issue-types/{key}` | Switch a check off or change its tolerance |
+| PATCH | `/issue-types/{key}` | Switch a check off or change its tolerance. Send `actor`; each change is kept in the activity log |
 | GET | `/source-records/{id}` | The untouched source row behind any number |
+| GET | `/activity` | Notes and actions in one list, newest first. Filters: `job`, `owner`, `person`, `source` (project, accounting, app), `kind`, `people_only`; paged |
+| GET | `/notes/reading` | How many notes the assistant has not read yet |
+| POST | `/notes/read` | Have the assistant read every unread note for promises and waits. A note is read once, and again only if its text changes |
+| GET | `/commitments` | Promises and waits read from notes, missed first. Filter by `job`, `owner`, `kind`, `state` (`active`, `missed`, `due_soon`, `open`, `kept`, `done`, `all`) |
+| POST | `/commitments/{id}/actions` | `done` or `reopen`, with `actor`. Marking one done is kept in the activity log |
 
-## Four places the model does work
+## Five places the model does work
 
 | Where | What the model does | What stays fixed |
 |---|---|---|
 | **Ask** (`assistant.py`) | Chooses which fixed lookups to run and writes the answer as text, tables, figures and charts | Every figure comes from a lookup. The page it was asked from only names a job or issue; the tools decide what the person may see |
 | **Bill coding** (`coding.py`) | Works out which job an unassigned vendor bill belongs to, from the bill's lines, the email it arrived on, the vendor's history and what each job is spending on. Says how sure it is, and can answer "not a job cost" or "not sure" | It may only name a job it was shown. A low-confidence job is reported as "not sure". A person accepts or rejects; nothing is written to accounting |
 | **Job review** (`review.py`) | Reads a job's items with their notes and history and says, for each, act now, wait until a date, or dismiss, and which to do first. This is what a rule cannot do: a note saying payment is promised for Friday means chasing today is wrong | Fixed rules in `items.py` already name the work that fixes each kind of item. The model may only choose among act, wait and dismiss; it cannot dismiss an unpaid invoice or bill, name an item that is not on the job, or set a date in the past. Its review is kept until an item changes. A person confirms every step |
+| **Reading notes** (`commitments.py`) | Reads the notes people wrote in the project system and accounting and pulls out every commitment in them: a customer's promise to pay, something promised to a customer, something the work is waiting on, or a next step the team said it would take, each with who, what and the date it resolves to. This is information no check can see; until now it lived in someone's head | It runs only when a person presses **Read new notes**, and never reads a note twice unless its text changed. Each commitment must cite a note it was shown, and a date before the note or more than six months after it is dropped. Whether a commitment was **kept or missed is never the model's call**: code works it out from the records (a payment after the note keeps a payment promise; a date passed with nothing since misses it). A missed payment promise tags its invoice "Payment promised by 31 Jul, not received", and the job review and drafts are given every commitment with its state |
 | **Follow-up drafts** (`drafts.py`) | Writes the words of a message about an issue | Who it goes to, their address and every fact it may use are chosen by code. Each dollar figure in the draft is checked against those facts. **Send** opens the message in the person's own Gmail, Outlook or mail app for them to send; the app has no mailbox access and sends nothing itself |
 
 ### How the bill coder is tested
@@ -225,6 +233,19 @@ The export holds one real promise: a note in accounting on invoice INV-2026-0502
 figures as of Tuesday 28 July, the right answer is to wait until Friday 31 July, not to
 chase again. The script reports that case on its own, because reading a note is the one
 thing the fixed rules cannot do. It calls the model once per job (21 jobs).
+
+### How the note reader is tested
+
+`evals/note_reading.py` puts the five notes in the export to the agent and compares what it
+finds with commitments written down by hand, matching by note, kind and date:
+
+```
+cd backend && uv run python -m evals.note_reading
+```
+
+All five notes are dated Friday 24 July, so "Friday" is 31 July and "next week" is Monday
+27 July. It reports right, wrong date and missed separately, and counts extras, since a
+missed promise matters more than an extra one to glance at. It calls the model once.
 
 The date of the last sync is the clock for all of this: how late something is, whether a
 follow-up date has arrived, and what "Friday" in a note means.

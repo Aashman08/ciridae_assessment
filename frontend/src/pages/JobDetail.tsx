@@ -1,12 +1,15 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
+import { ActivityTable } from '../components/ActivityTable'
+import { CommitmentTable, ReadNotesButton } from '../components/Commitments'
 import { NextSteps } from '../components/NextSteps'
 import { Card, CardHead, Empty, Facts, Loaded, PageHead } from '../components/ui'
 import { api } from '../lib/api'
 import type { CostBasis, FigureOption, JobDetail as Job, Line, RevenueBasis } from '../lib/api'
 import { useAssistant } from '../lib/assistant'
 import { money, percent, shortDate, stage, words } from '../lib/format'
+import { buttonClass } from '../lib/styles'
 
 interface FigurePickerProps<Basis extends string> {
   title: string
@@ -189,6 +192,49 @@ function Documents({ title, lines, empty, vendor = false }: DocumentsProps) {
   )
 }
 
+/** Promises and waits the assistant found in this job's notes, and where each stands. */
+function JobCommitments({ jobNumber }: { jobNumber: string }) {
+  const commitments = useQuery({
+    queryKey: ['commitments', 'job', jobNumber],
+    queryFn: () => api.commitments({ job: jobNumber, state: 'all', limit: 100 }),
+  })
+  return (
+    <Card>
+      <CardHead title="Promises and waits from notes">
+        <ReadNotesButton />
+      </CardHead>
+      <Loaded query={commitments}>
+        {(page) => <CommitmentTable commitments={page.data} empty="No promises or waits found in this job's notes" />}
+      </Loaded>
+    </Card>
+  )
+}
+
+const ACTIVITY_SHOWN = 50
+
+/**
+ * Everything written about the job and done on it, in one list: notes from the project
+ * system and accounting, updates logged here, and what happened to each of its issues.
+ */
+function JobActivity({ jobNumber }: { jobNumber: string }) {
+  const activity = useQuery({
+    queryKey: ['activity', 'job', jobNumber],
+    queryFn: () => api.activity({ job: jobNumber, limit: ACTIVITY_SHOWN }),
+  })
+  return (
+    <Card>
+      <CardHead title="Notes and activity">
+        {activity.data && activity.data.total > ACTIVITY_SHOWN && (
+          <Link to={`/activity?job=${jobNumber}`} className={buttonClass()}>
+            All {activity.data.total}
+          </Link>
+        )}
+      </CardHead>
+      <Loaded query={activity}>{(page) => <ActivityTable entries={page.data} empty="Nothing written or done on this job yet" />}</Loaded>
+    </Card>
+  )
+}
+
 export function JobDetail() {
   const { jobNumber = '' } = useParams()
   const [revenue, setRevenue] = useState<RevenueBasis>('ledger')
@@ -233,6 +279,10 @@ export function JobDetail() {
             <Documents title="Customer invoices" lines={data.invoices} empty="No invoices yet" />
             <Documents title="Vendor bills" lines={data.vendor_bills} empty="No vendor bills on this job" vendor />
           </div>
+
+          <JobCommitments jobNumber={data.job_number} />
+
+          <JobActivity jobNumber={data.job_number} />
         </>
       )}
     </Loaded>

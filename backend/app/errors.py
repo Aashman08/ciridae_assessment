@@ -50,6 +50,11 @@ class ItemNotFoundError(NotFoundError):
         super().__init__(f"There is nothing to fix called '{key}'.")
 
 
+class CommitmentNotFoundError(NotFoundError):
+    def __init__(self, commitment_id: int) -> None:
+        super().__init__(f"There is no commitment {commitment_id}.")
+
+
 class IssueTypeNotFoundError(NotFoundError):
     def __init__(self, key: str) -> None:
         super().__init__(f"No issue type found with key '{key}'.")

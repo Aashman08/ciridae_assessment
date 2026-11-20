@@ -319,6 +319,81 @@ class IssueEvent(Base):
 
 
 
+class Note(Base):
+    """A note someone wrote in a source system: on a project in the project system, or on an
+    invoice in accounting. Copied in at each sync so it can be shown beside our own activity."""
+
+    __tablename__ = "note"
+    __table_args__ = (
+        UniqueConstraint("source_table", "source_pk", name="uq_note_source"),
+        {"schema": RECON},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # project | accounting: which system it was written in
+    source: Mapped[str] = mapped_column(String(20), index=True)
+    job_id: Mapped[int | None] = mapped_column(ForeignKey(f"{RECON}.job.id", ondelete="CASCADE"), index=True)
+    # The invoice it was written on, when it was written on one
+    document: Mapped[str | None] = mapped_column(String(60))
+    written_by: Mapped[str] = mapped_column(String(120))
+    written_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    body: Mapped[str] = mapped_column(Text)
+    source_table: Mapped[str] = mapped_column(String(80))
+    source_pk: Mapped[str] = mapped_column(String(120))
+    source_record_id: Mapped[int] = mapped_column(ForeignKey(f"{RAW}.source_record.id"))
+    sync_run_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.sync_run.id"))
+
+
+class NoteReading(Base):
+    """That the assistant has read a note for commitments, and the text it read. A note
+    whose text has changed since is read again; one that has not is never paid for twice."""
+
+    __tablename__ = "note_reading"
+    __table_args__ = {"schema": RECON}
+
+    note_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.note.id", ondelete="CASCADE"), primary_key=True)
+    body_hash: Mapped[str] = mapped_column(String(64))
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Commitment(Base):
+    """A promise or a wait the assistant found in a note: a customer saying they will pay,
+    something promised to a customer, something the team is waiting on, or a next step
+    the team said it would take. Whether it was kept is worked out from the records."""
+
+    __tablename__ = "commitment"
+    __table_args__ = {"schema": RECON}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    note_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.note.id", ondelete="CASCADE"), index=True)
+    # payment_promised | promised_to_customer | waiting_on | we_will
+    kind: Mapped[str] = mapped_column(String(30))
+    # Who made the promise, or who is being waited on
+    who: Mapped[str] = mapped_column(String(120))
+    what: Mapped[str] = mapped_column(String(200))
+    due_on: Mapped[date | None] = mapped_column(Date)
+    # Set when a person marks it done. Payment promises are checked against payments instead.
+    done_by: Mapped[str | None] = mapped_column(String(120))
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    note: Mapped[Note] = relationship(lazy="raise")
+
+
+class SettingChange(Base):
+    """Someone switched a check on or off, or changed its tolerance. Kept so the audit log
+    shows who changed what the checks look for, not only what was done to issues."""
+
+    __tablename__ = "setting_change"
+    __table_args__ = {"schema": RECON}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    type_key: Mapped[str] = mapped_column(ForeignKey(f"{RECON}.issue_type.key"), index=True)
+    actor: Mapped[str] = mapped_column(String(120))
+    summary: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class AskExchange(Base):
     """One question someone asked and the answer they got, kept so a conversation
     is still there when they come back to it."""

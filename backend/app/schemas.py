@@ -282,6 +282,40 @@ class IssueTypeUpdate(BaseModel):
 
     enabled: bool | None = None
     tolerance: Decimal | None = Field(None, ge=0)
+    actor: str = Field("Someone", min_length=1, max_length=120, description="Who is making the change, for the activity log")
+
+
+# --- Activity ------------------------------------------------------------------
+
+ActivitySource = Literal["project", "accounting", "app"]
+
+
+class ActivityFilters(Paging):
+    job: str | None = Field(None, description="Only this job, by job number")
+    owner: str | None = Field(None, description="Only jobs this person is the ops manager of")
+    person: str | None = Field(None, description="Only what this person did or wrote. 'system' is a sync, 'assistant' the assistant")
+    source: ActivitySource | None = Field(
+        None, description="project: notes in the project system. accounting: notes in accounting. app: what people did in this app"
+    )
+    kind: str | None = Field(
+        None, description="note, or what happened to an issue: opened, assigned, follow_up, commented, suggested, resolved, "
+        "dismissed, reopened, cleared. setting_changed for a change to a check"
+    )
+    people_only: bool = Field(False, description="Leave out what syncs did, so only what people wrote or did remains")
+
+
+class ActivityEntry(BaseModel):
+    """One note or one action, newest first in any list of them."""
+
+    at: datetime
+    source: ActivitySource
+    kind: str
+    by: str = Field(description="A person's name, or 'system' for a sync and 'assistant' for the assistant")
+    text: str | None = Field(None, description="The note itself, or what was said or changed")
+    about: str | None = Field(None, description="The check it concerns, such as Past due")
+    job_number: str | None = None
+    job_name: str | None = None
+    document: str | None = Field(None, description="The invoice or bill it concerns")
 
 
 # --- Jobs ----------------------------------------------------------------------
@@ -844,6 +878,78 @@ class ReviewReply(BaseModel):
     items: list[ReviewedItem]
     first_item_key: str | None = Field(description="The item to deal with first, if any needs action")
     why_first: str | None
+
+
+# --- Commitments read from notes ------------------------------------------------
+
+CommitmentKind = Literal["payment_promised", "promised_to_customer", "waiting_on", "we_will"]
+CommitmentState = Literal["missed", "due_soon", "open", "kept", "done"]
+
+
+class FoundCommitment(BaseModel):
+    """One promise or wait the model found in one note."""
+
+    note_id: int = Field(description="The note it was found in")
+    kind: CommitmentKind = Field(
+        description="payment_promised: a customer said they will pay. promised_to_customer: we promised the customer "
+        "something. waiting_on: work is held up by someone outside the team. we_will: a next step the team said it would take"
+    )
+    who: str = Field(min_length=1, max_length=120, description="Who made the promise, or who is being waited on")
+    what: str = Field(min_length=1, max_length=200, description="What was promised or is awaited, in a few plain words")
+    due_on: str | None = Field(description="When it is due, as YYYY-MM-DD, only if the note gives or implies a date")
+
+
+class CommitmentsReply(BaseModel):
+    """What the model must hand back after reading a batch of notes."""
+
+    commitments: list[FoundCommitment]
+
+
+class CommitmentFilters(Paging):
+    job: str | None = Field(None, description="Only this job, by job number")
+    owner: str | None = Field(None, description="Only jobs this person is the ops manager of")
+    kind: CommitmentKind | None = None
+    state: Literal["active", "missed", "due_soon", "open", "kept", "done", "all"] = Field(
+        "active", description="active: missed, due soon or open. Kept and done are finished"
+    )
+
+
+class CommitmentResponse(BaseModel):
+    """A promise or a wait found in a note, and where it stands."""
+
+    id: int
+    kind: CommitmentKind
+    who: str
+    what: str
+    due_on: date | None
+    state: CommitmentState = Field(
+        description="missed: its date has passed and it has not happened. due_soon: due within a week. "
+        "kept: a payment promise the payments show was kept. done: a person marked it done"
+    )
+    job_number: str | None
+    job_name: str | None
+    document: str | None
+    noted_by: str
+    noted_on: date
+    noted_in: Literal["project", "accounting"]
+    note: str
+
+
+class CommitmentAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["done", "reopen"]
+    actor: str = Field(min_length=1, max_length=120)
+
+
+class NoteReadingStatus(BaseModel):
+    unread: int = Field(description="Notes the assistant has not read yet, or whose text changed since it did")
+    read: int
+
+
+class NotesReadResponse(BaseModel):
+    notes_read: int
+    commitments_found: int
 
 
 # --- Bill coding ---------------------------------------------------------------

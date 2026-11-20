@@ -8,14 +8,14 @@ sync to the next. Anything not seen in this run is removed at the end.
 """
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Company, CostCodeMap, Job, JobOwner, MoneyLine, SourceRecord, SyncRun
+from app.models import Company, CostCodeMap, Job, JobOwner, MoneyLine, Note, SourceRecord, SyncRun
 
 OWNER_ROLES = {"Primary Ops Manager": "ops_manager", "Primary AE": "account_executive"}
 
@@ -23,6 +23,15 @@ OWNER_ROLES = {"Primary Ops Manager": "ops_manager", "Primary AE": "account_exec
 # it internal labour and the cost code list calls it materials, so we do not
 # guess a category for it.
 UNCLASSIFIED = "UNCLASSIFIED"
+
+
+def person_name(email: str | None) -> str:
+    """A name from a work address: jenna.okafor@… is Jenna Okafor."""
+    return " ".join(part.capitalize() for part in (email or "unknown").split("@")[0].split("."))
+
+
+def to_datetime(value) -> datetime | None:
+    return datetime.fromisoformat(str(value)) if value else None
 
 
 def to_date(value) -> date | None:
@@ -290,9 +299,41 @@ async def normalize(db: AsyncSession, run: SyncRun) -> dict:
 
     await _upsert(db, MoneyLine, lines, ["source_table", "source_pk"])
 
+    # --- Notes: what people wrote in the project system and in accounting -------
+    job_id_by_project = {project["id"]: job_id_by_number[project["project_number"]] for _, project in landed.rows("projects")}
+    notes = []
+    for record_id, p in landed.rows("project_notes"):
+        notes.append({
+            "source": "project", "job_id": job_id_by_project.get(p.get("project_id")), "document": None,
+            "record_id": record_id, "table": "project_notes", "p": p,
+        })
+    for record_id, p in landed.rows("ar_invoice_notes"):
+        invoice = invoices.get(p.get("invoice_id"), {})
+        notes.append({
+            "source": "accounting", "job_id": job_id_by_opp.get(invoice.get("opportunity_id")),
+            "document": invoice.get("invoice_number"), "record_id": record_id, "table": "ar_invoice_notes", "p": p,
+        })
+    await _upsert(
+        db,
+        Note,
+        [
+            {
+                "source": n["source"], "job_id": n["job_id"], "document": n["document"],
+                "written_by": person_name(n["p"].get("created_by_email")),
+                "written_at": to_datetime(n["p"].get("created_at")),
+                "body": n["p"].get("content") or "",
+                "source_table": n["table"], "source_pk": str(n["p"]["id"]),
+                "source_record_id": n["record_id"], "sync_run_id": run.id,
+            }
+            for n in notes
+            if n["p"].get("created_at")
+        ],
+        ["source_table", "source_pk"],
+    )
+
     # --- Remove anything the source no longer has ----------------------------
     removed = 0
-    for model in (MoneyLine, Job, Company):
+    for model in (Note, MoneyLine, Job, Company):
         removed += (await db.execute(delete(model).where(model.sync_run_id != run.id))).rowcount
     await db.flush()
 

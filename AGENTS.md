@@ -21,8 +21,11 @@ Source lives in `backend/app/`:
 - `items.py` groups issues into items, the things a person fixes, and holds the
   fixed rules for what work fixes each kind. `review.py` is the agent that reviews a
   job's items. Detection in `issues.py` is untouched; grouping happens on read.
-- `coding.py` is the bill coder and `drafts.py` is the follow-up drafter. Each is one
-  agent with a typed reply that our code checks before it is returned.
+- `coding.py` is the bill coder, `drafts.py` is the follow-up drafter and
+  `commitments.py` reads notes for promises and waits. Each is one agent with a typed
+  reply that our code checks before it is returned. Whether a commitment was kept is
+  worked out by code from the records, never by the model, and notes are read only
+  when a person asks.
 - `scheduler.py` runs a sync every `SYNC_EVERY_MINUTES`.
 - `evals/` holds scripts that score an agent against known answers using the real model.
 - `landing.py`, `normalize.py`, `financials.py` and `issues.py` are the four steps

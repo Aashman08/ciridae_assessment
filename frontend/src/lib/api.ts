@@ -169,6 +169,45 @@ export interface ItemUpdate {
 }
 
 /** Someone an issue can belong to. */
+/** Where an activity entry came from: a note in the project system or accounting, or something done in this app. */
+export type ActivitySource = 'project' | 'accounting' | 'app'
+
+/** One note or one action, newest first in any list of them. */
+export interface ActivityEntry {
+  at: string
+  source: ActivitySource
+  /** note, what happened to an issue (opened, resolved, dismissed…), or setting_changed */
+  kind: string
+  /** A person's name, or 'system' for a sync and 'assistant' for the assistant. */
+  by: string
+  text: string | null
+  /** The check it concerns. */
+  about: string | null
+  job_number: string | null
+  job_name: string | null
+  document: string | null
+}
+
+export type CommitmentKind = 'payment_promised' | 'promised_to_customer' | 'waiting_on' | 'we_will'
+export type CommitmentState = 'missed' | 'due_soon' | 'open' | 'kept' | 'done'
+
+/** A promise or a wait the assistant found in a note, and where it stands, worked out from the records. */
+export interface Commitment {
+  id: number
+  kind: CommitmentKind
+  who: string
+  what: string
+  due_on: string | null
+  state: CommitmentState
+  job_number: string | null
+  job_name: string | null
+  document: string | null
+  noted_by: string
+  noted_on: string
+  noted_in: 'project' | 'accounting'
+  note: string
+}
+
 export interface Person {
   name: string
   roles: string[]
@@ -601,8 +640,17 @@ export const api = {
   people: () => request<Person[]>('/people'),
   sources: () => request<SourceSystem[]>('/sources'),
 
+  commitments: (params: Paging & { job?: string; owner?: string; kind?: CommitmentKind; state?: string }) =>
+    request<ListResponse<Commitment>>(`/commitments${query(params)}`),
+  actOnCommitment: (id: number, body: { action: 'done' | 'reopen'; actor: string }) => post<Commitment>(`/commitments/${id}/actions`, body),
+  noteReading: () => request<{ unread: number; read: number }>('/notes/reading'),
+  readNotes: () => post<{ notes_read: number; commitments_found: number }>('/notes/read'),
+
+  activity: (params: Paging & { job?: string; owner?: string; person?: string; source?: string; kind?: string; people_only?: boolean }) =>
+    request<ListResponse<ActivityEntry>>(`/activity${query(params)}`),
+
   issueTypes: () => request<IssueType[]>('/issue-types'),
-  updateIssueType: (key: string, body: { enabled?: boolean; tolerance?: string }) =>
+  updateIssueType: (key: string, body: { enabled?: boolean; tolerance?: string; actor: string }) =>
     request<IssueType>(`/issue-types/${key}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   latestSync: () => request<ListResponse<SyncRun>>('/sync-runs?limit=1'),

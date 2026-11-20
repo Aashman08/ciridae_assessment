@@ -7,6 +7,7 @@ import { api } from '../lib/api'
 import type { IssueType } from '../lib/api'
 import { money } from '../lib/format'
 import { useRunSync } from '../lib/sync'
+import { useViewer } from '../lib/viewer'
 
 /** A tolerance is stored as a ratio (0.02) or as dollars (1). Show it the way people say it. */
 function shown(type: IssueType): string {
@@ -15,12 +16,13 @@ function shown(type: IssueType): string {
 }
 
 function ToleranceCell({ type }: { type: IssueType }) {
+  const { viewer } = useViewer()
   const client = useQueryClient()
   const ratio = type.tolerance_unit === 'ratio'
   const [draft, setDraft] = useState<string | null>(null)
 
   const save = useMutation({
-    mutationFn: (value: number) => api.updateIssueType(type.key, { tolerance: String(ratio ? value / 100 : value) }),
+    mutationFn: (value: number) => api.updateIssueType(type.key, { tolerance: String(ratio ? value / 100 : value), actor: viewer.name }),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ['issue-types'] })
       setDraft(null)
@@ -71,9 +73,10 @@ function ToleranceCell({ type }: { type: IssueType }) {
 }
 
 function Switch({ type }: { type: IssueType }) {
+  const { viewer } = useViewer()
   const client = useQueryClient()
   const toggle = useMutation({
-    mutationFn: () => api.updateIssueType(type.key, { enabled: !type.enabled }),
+    mutationFn: () => api.updateIssueType(type.key, { enabled: !type.enabled, actor: viewer.name }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['issue-types'] }),
   })
 

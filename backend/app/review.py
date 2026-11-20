@@ -59,6 +59,10 @@ Rules:
 - Notes are dated. A promise whose date has passed with nothing since is a reason to
   act, not to wait.
 - The job's project notes are background. Use them only if they bear on an item.
+- The job's commitments are promises and waits read from notes, each with where it stands:
+  missed, due_soon, open, kept or done. A missed payment promise is a strong reason to act
+  now and to say the promise was missed. One that is due soon and still open is a reason to
+  wait until its date. A kept one needs nothing.
 - Today is {today}, the date the figures are as of. "Days late" is measured against it,
   and so are the dates in notes: "Friday" in a note means the Friday after the note's date.
 """
