@@ -1,5 +1,6 @@
 """HTTP behaviour: routes, filters, paging, errors and access."""
 
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -573,6 +574,21 @@ async def test_the_finance_view_ties_to_the_ledger_and_the_summary(api, db):
     assert sum(Decimal(m["collected"]) for m in months) == Decimal(summary["contract_to_cash"]["collected"])
     assert sum(Decimal(m["invoiced"]) for m in months) == Decimal(summary["contract_to_cash"]["invoiced"])
 
+    # By week, the same totals, one Monday after the next with no week left out.
+    weeks = finance["by_week"]
+    starts = [date.fromisoformat(w["week_of"]) for w in weeks]
+    assert all(start.weekday() == 0 for start in starts)
+    assert all(later - earlier == timedelta(days=7) for earlier, later in zip(starts, starts[1:]))
+    for column in ("revenue", "cost", "invoiced", "collected"):
+        assert sum(Decimal(w[column]) for w in weeks) == sum(Decimal(m[column]) for m in months)
+
+    # The running totals end at the overall totals, weekly and monthly alike, and never go down.
+    for column in ("revenue", "cost", "invoiced", "collected"):
+        for periods in (weeks, months):
+            so_far = [Decimal(p[f"{column}_to_date"]) for p in periods]
+            assert so_far == sorted(so_far)
+            assert so_far[-1] == sum(Decimal(p[column]) for p in periods)
+
     # Cost by cost code is the project team's split. The ledger posts to one account, so it has none.
     codes = {c["cost_code"]: Decimal(c["ops_cost"]) for c in finance["cost_by_code"]}
     assert set(codes) == {"INTERNAL_LABOR", "SPECIALTY_SUBCONTRACTOR", "MATERIALS_AND_SUPPLIES", "EQUIPMENT_RENTAL_AND_FUEL"}
@@ -580,6 +596,8 @@ async def test_the_finance_view_ties_to_the_ledger_and_the_summary(api, db):
         "select sum(amount) from recon.money_line where kind = 'ops_cost' and job_id is not null"
     ))
     assert finance["ledger_cost_accounts"] == ["5020"]
+    assert Decimal(finance["logged_cost"]) == sum(codes.values())
+    assert abs(sum(Decimal(c["share_pct"]) for c in finance["cost_by_code"]) - 100) <= Decimal("0.2")
 
     # Receivables by age add up to what has been sent and not collected, and the late ones to what is past due.
     aged = {a["bucket"]: (a["invoices"], Decimal(a["amount"])) for a in finance["receivables_by_age"]}

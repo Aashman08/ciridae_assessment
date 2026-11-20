@@ -134,7 +134,8 @@ export function Issues() {
                                 // The name goes to the job's page; anywhere else on the row opens its items here.
                                 <Link
                                   to={`/jobs/${group.job_number}`}
-                                  className="font-medium hover:underline"
+                                  className="block max-w-[17rem] truncate font-medium hover:underline 2xl:max-w-[28rem]"
+                                  title={group.job_name ?? undefined}
                                   onClick={(event) => event.stopPropagation()}
                                 >
                                   {group.job_name}
@@ -148,7 +149,7 @@ export function Issues() {
                                 {group.job_number ? (group.ops_manager ?? 'None assigned') : ''}
                               </td>
                             )}
-                            <td className="min-w-[18rem] max-md:hidden">
+                            <td className="min-w-[15rem] max-md:hidden">
                               <Tags tags={group.tags} />
                             </td>
                             <td className="num">{group.items.length}</td>

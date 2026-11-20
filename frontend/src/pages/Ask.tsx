@@ -7,17 +7,19 @@ import { Button } from '../components/ui'
 import type { AskResponse, AskSource } from '../lib/api'
 import { sourceLink, suggestionsFor } from '../lib/assistant'
 import { useConversation } from '../lib/conversation'
+import { TONE } from '../lib/tones'
+import type { Tone } from '../lib/tones'
 import { useViewer } from '../lib/viewer'
 
 const ICON = { size: '1rem', strokeWidth: 1.5, 'aria-hidden': true } as const
 
 const SOURCES_OPEN = 'ask-sources-open'
 
-const SOURCE_KINDS: Record<AskSource['kind'], { icon: LucideIcon; name: string }> = {
-  job: { icon: HardHat, name: 'Job' },
-  issue: { icon: TriangleAlert, name: 'Issue' },
-  invoice: { icon: Receipt, name: 'Customer invoice' },
-  vendor_bill: { icon: FileText, name: 'Vendor bill' },
+const SOURCE_KINDS: Record<AskSource['kind'], { icon: LucideIcon; name: string; tone: Tone }> = {
+  job: { icon: HardHat, name: 'Job', tone: 'slate' },
+  issue: { icon: TriangleAlert, name: 'Issue', tone: 'amber' },
+  invoice: { icon: Receipt, name: 'Customer invoice', tone: 'blue' },
+  vendor_bill: { icon: FileText, name: 'Vendor bill', tone: 'violet' },
 }
 
 /** A source's two lines: what it is called, then what kind of record it is and its number. */
@@ -89,13 +91,15 @@ function Sources({ sources, onClose, className }: { sources: AskSource[]; onClos
       ) : (
         <ul className="flex flex-col gap-0.5 pt-1">
           {sources.map((source) => {
-            const { icon: Icon } = SOURCE_KINDS[source.kind]
+            const { icon: Icon, tone } = SOURCE_KINDS[source.kind]
             const { title, detail } = describe(source)
             const to = sourceLink(source)
-            const row = 'grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3 rounded-lg px-3 py-2'
+            const row = 'grid grid-cols-[1.5rem_minmax(0,1fr)] items-start gap-x-3 rounded-lg px-3 py-2'
             const body = (
               <>
-                <Icon {...ICON} className="mt-0.5 text-muted" />
+                <span aria-hidden className={`grid size-6 place-items-center rounded-md ${TONE[tone]}`}>
+                  <Icon size="0.875rem" strokeWidth={1.5} />
+                </span>
                 <span className="min-w-0">
                   <span className="block text-[0.8125rem]">{title}</span>
                   <span className="block font-mono text-xs leading-4 text-muted">{detail}</span>

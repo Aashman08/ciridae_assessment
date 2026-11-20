@@ -102,7 +102,17 @@ export interface ItemAction {
 export interface Item {
   /** Stable name: the kind and what it is about, such as "bill_stuck:APX-40766". */
   key: string
-  kind: 'invoice_unpaid' | 'invoice_not_sent' | 'bill_stuck' | 'bill_no_job' | 'cost_gap' | 'billing_gap' | 'no_ops_manager'
+  kind:
+    | 'invoice_unpaid'
+    | 'invoice_not_sent'
+    | 'bill_stuck'
+    | 'bill_no_job'
+    | 'cost_gap'
+    | 'billing_gap'
+    | 'late_start'
+    | 'stalled'
+    | 'budget_risk'
+    | 'no_ops_manager'
   title: string
   document: string | null
   company: string | null
@@ -417,6 +427,18 @@ export interface Operations {
   }[]
 }
 
+/** One week or month of the ledger, and the running totals from the first period to this one. */
+export interface FinancePeriod {
+  revenue: Money
+  cost: Money
+  invoiced: Money
+  collected: Money
+  revenue_to_date: Money
+  cost_to_date: Money
+  invoiced_to_date: Money
+  collected_to_date: Money
+}
+
 /** The ledger's view of the business: what was earned and spent, where cost went, and what is owed. */
 export interface Finance {
   as_of: string
@@ -424,9 +446,13 @@ export interface Finance {
   cost: Money
   profit: Money
   margin_pct: string | null
-  by_month: { month: string; revenue: Money; cost: Money; invoiced: Money; collected: Money }[]
-  /** What the project team logged under each cost code. */
-  cost_by_code: { cost_code: string; ops_cost: Money }[]
+  by_month: (FinancePeriod & { month: string })[]
+  /** The same figures a week at a time, from the Monday each week starts on. */
+  by_week: (FinancePeriod & { week_of: string })[]
+  /** What the project team logged under each cost code, and its share of all they logged. */
+  cost_by_code: { cost_code: string; ops_cost: Money; share_pct: string }[]
+  /** All cost the project teams logged. */
+  logged_cost: Money
   /** The ledger accounts job cost is posted to. One account means the ledger cannot split cost by cost code. */
   ledger_cost_accounts: string[]
   receivables_by_age: { bucket: 'not_due' | 'late_1_30' | 'late_31_60' | 'late_over_60'; invoices: number; amount: Money }[]

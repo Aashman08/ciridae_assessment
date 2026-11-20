@@ -51,8 +51,9 @@ const ICON = { size: '1rem', strokeWidth: 1.5, 'aria-hidden': true } as const
 
 const ROW =
   'grid h-9 shrink-0 grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 text-left text-ink-2 ' +
-  'transition-colors duration-150 ease-out hover:bg-raised hover:text-ink'
-const ROW_ACTIVE = 'bg-card text-ink ring-1 ring-hair ring-inset hover:bg-card'
+  'transition-colors duration-150 ease-out hover:bg-side-hover hover:text-ink'
+// The frame is white; the page you are on is the one darker row in it.
+const ROW_ACTIVE = 'bg-side-active font-medium text-ink hover:bg-side-active'
 
 function Mark() {
   return (
@@ -110,7 +111,7 @@ function AccountSwitcher() {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_1rem] items-center gap-2 rounded-lg bg-card p-2 text-left ring-1 ring-hair ring-inset transition-colors duration-150 ease-out hover:bg-raised"
+        className="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_1rem] items-center gap-2 rounded-lg bg-side p-2 text-left ring-1 ring-hair ring-inset transition-colors duration-150 ease-out hover:bg-side-hover"
       >
         <Initial name={viewer.name} />
         <span className="min-w-0">
@@ -183,9 +184,13 @@ function Sidebar() {
       <nav aria-label={viewer.scope} className="flex gap-1 overflow-x-auto pt-2 md:flex-col md:gap-0.5 md:overflow-visible md:pt-0">
         {sections.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => `${ROW} ${isActive ? ROW_ACTIVE : ''}`}>
-            <Icon {...ICON} className="text-muted" />
-            <span className="truncate">{label}</span>
-            <span className="font-mono text-xs text-muted tabular-nums">{counts[to] ?? ''}</span>
+            {({ isActive }) => (
+              <>
+                <Icon {...ICON} className={isActive ? 'text-brand' : 'text-muted'} />
+                <span className="truncate">{label}</span>
+                <span className="font-mono text-xs text-muted tabular-nums">{counts[to] ?? ''}</span>
+              </>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -193,9 +198,13 @@ function Sidebar() {
       {/* Settings sit at the bottom, in the same rows as the pages above them. */}
       <div className="mt-auto flex gap-1 pt-3 md:flex-col md:gap-0.5 md:pt-6">
         <NavLink to="/connectors" className={({ isActive }) => `${ROW} ${isActive ? ROW_ACTIVE : ''}`}>
-          <Plug {...ICON} className="text-muted" />
-          <span className="truncate">Connectors</span>
-          <span />
+          {({ isActive }) => (
+            <>
+              <Plug {...ICON} className={isActive ? 'text-brand' : 'text-muted'} />
+              <span className="truncate">Connectors</span>
+              <span />
+            </>
+          )}
         </NavLink>
         <label className={`${ROW} cursor-pointer`}>
           <Moon {...ICON} className="text-muted" />
@@ -276,12 +285,18 @@ export function Shell() {
     <div
       className={cx(
         'grid min-h-full grid-cols-1',
-        view ? 'md:grid-cols-[15.5rem_minmax(0,1fr)] 2xl:grid-cols-[15.5rem_minmax(0,1fr)_26rem]' : 'md:grid-cols-[15.5rem_minmax(0,1fr)]',
+        !view
+          ? 'md:grid-cols-[15.5rem_minmax(0,1fr)]'
+          : view.kind === 'document'
+            ? // An invoice or bill reads like a page, so it gets a wider pane than a chat or a draft.
+              'md:grid-cols-[15.5rem_minmax(0,1fr)] 2xl:grid-cols-[15.5rem_minmax(0,1fr)_38rem]'
+            : 'md:grid-cols-[15.5rem_minmax(0,1fr)] 2xl:grid-cols-[15.5rem_minmax(0,1fr)_26rem]',
       )}
     >
       <Sidebar />
       <div className="flex min-w-0 flex-col">
-        <header className="flex h-14 items-center justify-between gap-4 border-b border-hair px-4 md:px-6">
+        {/* The top bar is part of the frame, with the sidebar, so it shares the sidebar's white. */}
+        <header className="flex h-14 items-center justify-between gap-4 border-b border-hair bg-side px-4 md:px-6">
           <Crumb />
           <TopBarRight />
         </header>

@@ -478,17 +478,31 @@ class OperationsResponse(BaseModel):
 # --- Finance -------------------------------------------------------------------
 
 
-class FinanceMonth(BaseModel):
-    month: str = Field(description="The calendar month, as YYYY-MM")
+class FinancePeriod(BaseModel):
+    """What happened in one week or month, and the running total from the first period to this one."""
+
     revenue: Money = Field(description="Revenue posted to the ledger")
     cost: Money = Field(description="Job cost posted to the ledger")
-    invoiced: Money
+    invoiced: Money = Field(description="Customer invoices dated in the period")
     collected: Money = Field(description="Customer payments received")
+    revenue_to_date: Money
+    cost_to_date: Money
+    invoiced_to_date: Money
+    collected_to_date: Money
+
+
+class FinanceMonth(FinancePeriod):
+    month: str = Field(description="The calendar month, as YYYY-MM")
+
+
+class FinanceWeek(FinancePeriod):
+    week_of: date = Field(description="The Monday the week starts on")
 
 
 class CostByCode(BaseModel):
     cost_code: str
     ops_cost: Money = Field(description="What the project team logged under this cost code")
+    share_pct: Percent = Field(description="Its share of all cost the project teams logged")
 
 
 class ReceivableAge(BaseModel):
@@ -515,7 +529,9 @@ class FinanceResponse(BaseModel):
     profit: Money
     margin_pct: Percent | None
     by_month: list[FinanceMonth]
+    by_week: list[FinanceWeek] = Field(description="The same figures a week at a time, with a zero for a week with nothing posted")
     cost_by_code: list[CostByCode]
+    logged_cost: Money = Field(description="All cost the project teams logged, the total of cost_by_code")
     ledger_cost_accounts: list[str] = Field(
         description="The ledger accounts job cost is posted to. One account means the ledger cannot split cost by cost code"
     )

@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TypeVar
 
-from sqlalchemy import and_, case, delete, exists, func, or_, select, text
+from sqlalchemy import Date, and_, case, cast, delete, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
@@ -47,6 +47,7 @@ from app.financials import (
     contract_stages,
     latest_run_id,
     margin_pct,
+    share_pct,
 )
 from app.issues import DOCUMENT_TYPES, FINANCE_QUEUE, UNSENT_STATUSES, apply_action, find_issues
 from app.items import DOCUMENT_KINDS, KIND_OF, SCHEDULE_KINDS, TITLES, build_items, fingerprint, group_by_job, what_to_ask, with_whom, working_days_from
@@ -86,6 +87,7 @@ from app.schemas import (
     DocumentPayment,
     DocumentResponse,
     FinanceMonth,
+    FinanceWeek,
     FinanceResponse,
     ReceivableAge,
     WorkKindProfit,
@@ -1209,19 +1211,51 @@ class ReconClient:
         def of(kind: str):
             return total_of(line.amount, line.kind == kind)
 
-        month = func.to_char(line.line_date, "YYYY-MM")
-        months = await self.db.execute(
-            select(month.label("month"), of("ledger_revenue"), of("ledger_cost"), of(INVOICE), of("customer_payment"))
-            .where(line.kind.in_(("ledger_revenue", "ledger_cost", INVOICE, "customer_payment")), line.line_date.is_not(None), on_a_job)
-            .group_by(month)
-            .order_by(month)
-        )
+        def by(period):
+            return (
+                select(period.label("period"), of("ledger_revenue"), of("ledger_cost"), of(INVOICE), of("customer_payment"))
+                .where(line.kind.in_(("ledger_revenue", "ledger_cost", INVOICE, "customer_payment")), line.line_date.is_not(None), on_a_job)
+                .group_by(period)
+                .order_by(period)
+            )
+
+        def running(periods: list[tuple]) -> list[dict]:
+            """Each period's four figures, with the totals so far beside them."""
+            so_far = [ZERO, ZERO, ZERO, ZERO]
+            rows = []
+            for key, *figures in periods:
+                so_far = [total + figure for total, figure in zip(so_far, figures)]
+                rows.append({
+                    "key": key,
+                    **dict(zip(("revenue", "cost", "invoiced", "collected"), figures)),
+                    **dict(zip(("revenue_to_date", "cost_to_date", "invoiced_to_date", "collected_to_date"), so_far)),
+                })
+            return rows
+
+        months = [
+            FinanceMonth(month=row.pop("key"), **row)
+            for row in running((await self.db.execute(by(func.to_char(line.line_date, "YYYY-MM")))).all())
+        ]
+        posted = {
+            week: tuple(totals)
+            for week, *totals in await self.db.execute(by(cast(func.date_trunc("week", line.line_date), Date)))
+        }
+        # Every week from the first to the last is shown, so a quiet week reads as zero, not as a gap.
+        every_week = []
+        if posted:
+            week = min(posted)
+            while week <= max(posted):
+                every_week.append((week, *posted.get(week, (ZERO, ZERO, ZERO, ZERO))))
+                week += timedelta(days=7)
+        weeks = [FinanceWeek(week_of=row.pop("key"), **row) for row in running(every_week)]
         codes = await self.db.execute(
             select(line.cost_category, total_of(line.amount))
             .where(line.kind == "ops_cost", line.cost_category.is_not(None), on_a_job)
             .group_by(line.cost_category)
             .order_by(total_of(line.amount).desc())
         )
+        codes = codes.all()
+        logged = sum((amount for _, amount in codes), ZERO)
         accounts = await self.db.scalars(
             select(line.description).where(line.kind == "ledger_cost", on_a_job).distinct().order_by(line.description)
         )
@@ -1266,11 +1300,10 @@ class ReconClient:
             cost=cost,
             profit=revenue - cost,
             margin_pct=margin_pct(revenue, cost),
-            by_month=[
-                FinanceMonth(month=m, revenue=earned, cost=spent, invoiced=invoiced, collected=collected)
-                for m, earned, spent, invoiced, collected in months
-            ],
-            cost_by_code=[CostByCode(cost_code=code, ops_cost=amount) for code, amount in codes],
+            by_month=months,
+            by_week=weeks,
+            cost_by_code=[CostByCode(cost_code=code, ops_cost=amount, share_pct=share_pct(amount, logged)) for code, amount in codes],
+            logged_cost=logged,
             ledger_cost_accounts=[text.removeprefix("Account ") for text in accounts if text],
             receivables_by_age=[
                 ReceivableAge(bucket=key, invoices=aged.get(key, (0, ZERO))[0], amount=aged.get(key, (0, ZERO))[1])

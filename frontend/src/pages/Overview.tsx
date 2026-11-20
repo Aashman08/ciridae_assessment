@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
+import { CalendarClock, ClipboardList, FileText, Gauge, Receipt, Send, Siren, TrendingUp, UserX } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Chart } from '../components/Chart'
+import { Donut } from '../components/Donut'
 import { ItemTable, Tags } from '../components/ItemTable'
 import { JobTable } from '../components/JobTable'
-import { Card, CardHead, Loaded, PageHead, Stat } from '../components/ui'
+import { Card, CardHead, Loaded, PageHead, Select, Stat } from '../components/ui'
 import { api } from '../lib/api'
-import type { Finance, Operations, Summary } from '../lib/api'
+import type { Finance, FinancePeriod, Operations, Summary } from '../lib/api'
 import { longDate, money, percent, plural, shortDate, words } from '../lib/format'
 import { buttonClass } from '../lib/styles'
 import { useViewer } from '../lib/viewer'
@@ -25,18 +27,19 @@ function PastDue({ amount }: { amount: string }) {
 
 type Stage = Summary['contract_to_cash']['stages'][number]
 
-// Each part of the contract value: what to call it, how dark to draw it, and where its detail is.
-// One hue from dark to light follows the money from in the bank to not yet earned.
-const STAGES: Record<Stage['key'], { label: string; ink: number; to?: string }> = {
-  collected: { label: 'Collected', ink: 88 },
-  sent_not_collected: { label: 'Sent, not collected', ink: 62, to: '/invoices?balance=open' },
-  invoiced_not_sent: { label: 'Invoiced, not sent', ink: 42, to: '/issues?type=not_sent' },
-  earned_not_invoiced: { label: 'Earned, not invoiced', ink: 26 },
-  not_yet_earned: { label: 'Not yet earned', ink: 12 },
+// Each part of the contract value: what to call it, its colour, and where its detail is.
+// Every stage has its own hue from the chart colours: green for money in the bank, amber for work not yet billed. Work not
+// yet earned is not money moving at all, so it is grey.
+const STAGES: Record<Stage['key'], { label: string; colour: string; to?: string }> = {
+  collected: { label: 'Collected', colour: 'var(--series-2)' },
+  sent_not_collected: { label: 'Sent, not collected', colour: 'var(--series-1)', to: '/invoices?balance=open' },
+  invoiced_not_sent: { label: 'Invoiced, not sent', colour: 'var(--series-3)', to: '/issues?type=not_sent' },
+  earned_not_invoiced: { label: 'Earned, not invoiced', colour: 'var(--series-4)' },
+  not_yet_earned: { label: 'Not yet earned', colour: 'var(--tint-slate)' },
 }
 
 function shade(key: Stage['key']): string {
-  return `color-mix(in oklab, var(--ink) ${STAGES[key].ink}%, var(--card))`
+  return STAGES[key].colour
 }
 
 /**
@@ -143,6 +146,82 @@ function monthName(month: string): string {
   return new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' })
 }
 
+// The four ledger figures, drawn together, in this order so each keeps its colour.
+// Profit is not here: it is the backend's figure, and is in the table further down.
+const TRENDS = [
+  { key: 'revenue', label: 'Revenue, per ledger' },
+  { key: 'collected', label: 'Cash collected' },
+  { key: 'invoiced', label: 'Invoiced' },
+  { key: 'cost', label: 'Cost, per ledger' },
+] as const
+
+/**
+ * Revenue, cash, invoicing and cost over time on one chart, a week or a month
+ * at a time, either as what happened in each period or as running totals.
+ * Both choices are kept in the address, like a filter.
+ */
+function LedgerTrend({ ledger }: { ledger: Finance }) {
+  const [params, setParams] = useSearchParams()
+  const monthly = params.get('by') === 'month'
+  const running = params.get('total') === 'running'
+  const set = (key: string, value: string, fallback: string) =>
+    setParams(
+      (now) => {
+        const next = new URLSearchParams(now)
+        if (value === fallback) next.delete(key)
+        else next.set(key, value)
+        return next
+      },
+      { replace: true },
+    )
+
+  const periods: FinancePeriod[] = monthly ? ledger.by_month : ledger.by_week
+  const labels = monthly ? ledger.by_month.map((m) => monthName(m.month)) : ledger.by_week.map((w) => shortDate(w.week_of))
+  const period = monthly ? 'month' : 'week'
+
+  return (
+    <Chart
+      kind="area"
+      title={running ? `Revenue, cash and cost, running total by ${period}` : `Revenue, cash and cost, by ${period}`}
+      unit="money"
+      points={labels}
+      series={TRENDS.map(({ key, label }) => ({
+        label,
+        values: periods.map((p) => Number(running ? p[`${key}_to_date`] : p[key])),
+      }))}
+      aside={
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            label="Show"
+            value={running ? 'running' : 'each'}
+            onChange={(value) => set('total', value, 'each')}
+            options={[
+              { value: 'each', label: monthly ? 'Monthly total' : 'Weekly total' },
+              { value: 'running', label: 'Running total' },
+            ]}
+            className="w-40"
+          />
+          <Select
+            label="By"
+            value={period}
+            onChange={(value) => set('by', value, 'week')}
+            options={[
+              { value: 'week', label: 'Week' },
+              { value: 'month', label: 'Month' },
+            ]}
+            className="w-28"
+          />
+        </div>
+      }
+      note={
+        running
+          ? `Each line adds up from the first ${period}. The gap between revenue and invoiced is work earned and not yet billed, or billed ahead of being earned; the gap between invoiced and cash is what customers still owe. Figures run to ${longDate(ledger.as_of)}`
+          : `Four separate measures, each dated when it happened: revenue and cost when the ledger booked them, invoices by their date, cash when it arrived. They do not add up to each other. Figures run to ${longDate(ledger.as_of)}`
+      }
+    />
+  )
+}
+
 /**
  * Finance's view: the ledger. What was earned and spent and when, where the
  * cost went, how the contract value is turning into cash, and what is owed.
@@ -166,48 +245,43 @@ function FinanceOverview({ summary }: { summary: Summary }) {
             <div className={STATS}>
               <Stat
                 label="Profit, per ledger"
+                icon={TrendingUp}
                 value={money(ledger.profit)}
                 note={`${percent(ledger.margin_pct)} of ${money(ledger.revenue)} revenue`}
               />
-              <Stat label="Owed by customers" value={money(cash.owed)} note={<PastDue amount={cash.past_due} />} />
-              <Stat label="Invoices not sent" value={money(cash.invoices_not_sent)} note={plural(cash.invoices_not_sent_count, 'invoice')} />
+              <Stat label="Owed by customers" icon={Receipt} value={money(cash.owed)} note={<PastDue amount={cash.past_due} />} />
+              <Stat
+                label="Invoices not sent"
+                icon={Send}
+                value={money(cash.invoices_not_sent)}
+                note={plural(cash.invoices_not_sent_count, 'invoice')}
+              />
               <Stat
                 label="Vendor bills unpaid"
+                icon={FileText}
                 value={money(cash.vendor_bills_unpaid)}
                 note={`${plural(cash.vendor_bills_count, 'bill')}, none in the ledger`}
               />
             </div>
 
+            <LedgerTrend ledger={ledger} />
+
             <div className="grid grid-cols-1 gap-4 @[60rem]:grid-cols-2">
-              <Chart
-                kind="line"
-                title="Revenue, cost and cash by month"
-                unit="money"
-                points={ledger.by_month.map((m) => monthName(m.month))}
-                series={[
-                  { label: 'Revenue, ledger', values: ledger.by_month.map((m) => Number(m.revenue)) },
-                  { label: 'Cost, ledger', values: ledger.by_month.map((m) => Number(m.cost)) },
-                  { label: 'Cash collected', values: ledger.by_month.map((m) => Number(m.collected)) },
-                ]}
-                note={`${monthName(ledger.by_month[ledger.by_month.length - 1]?.month ?? ledger.as_of.slice(0, 7))} runs to ${longDate(ledger.as_of)}`}
-              />
-              <Chart
-                kind="bar"
+              <Donut
                 title="Cost by cost code"
-                unit="money"
-                points={ledger.cost_by_code.map((c) => COST_CODES[c.cost_code] ?? words(c.cost_code))}
-                series={[{ label: 'Logged by project teams', values: ledger.cost_by_code.map((c) => Number(c.ops_cost)) }]}
+                heading="Cost code"
+                slices={ledger.cost_by_code.map((c) => ({
+                  label: COST_CODES[c.cost_code] ?? words(c.cost_code),
+                  amount: c.ops_cost,
+                  share_pct: c.share_pct,
+                }))}
+                total={{ label: 'Logged', amount: ledger.logged_cost }}
                 note={
                   ledger.ledger_cost_accounts.length === 1
                     ? `This is the project teams' cost log. The ledger posts all job cost to one account, ${ledger.ledger_cost_accounts[0]}, so it cannot be split by cost code`
                     : "This is the project teams' cost log"
                 }
               />
-            </div>
-
-            <ContractFlow flow={flow} />
-
-            <div className="grid grid-cols-1 gap-4 @[60rem]:grid-cols-2">
               <Chart
                 kind="bar"
                 title="What customers owe, by days late"
@@ -216,36 +290,39 @@ function FinanceOverview({ summary }: { summary: Summary }) {
                 series={[{ label: 'Unpaid on sent invoices', values: ledger.receivables_by_age.map((a) => Number(a.amount)) }]}
                 note="Invoices that have been sent and not fully paid. Invoices not yet sent are not in this"
               />
-              <Card>
-                <CardHead title="Profit by kind of work, per ledger" />
-                <div className="overflow-x-auto">
-                  <table className="data-table dense">
-                    <thead>
-                      <tr>
-                        <th>Kind of work</th>
-                        <th className="num">Jobs</th>
-                        <th className="num">Revenue</th>
-                        <th className="num">Cost</th>
-                        <th className="num">Profit</th>
-                        <th className="num">Margin</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ledger.by_service_line.map((kind) => (
-                        <tr key={kind.service_line}>
-                          <td>{words(kind.service_line)}</td>
-                          <td className="num">{kind.jobs}</td>
-                          <td className="num">{money(kind.revenue)}</td>
-                          <td className="num">{money(kind.cost)}</td>
-                          <td className={`num ${Number(kind.profit) < 0 ? 'text-neg' : ''}`}>{money(kind.profit)}</td>
-                          <td className="num">{percent(kind.margin_pct)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
             </div>
+
+            <ContractFlow flow={flow} />
+
+            <Card>
+              <CardHead title="Profit by kind of work, per ledger" />
+              <div className="overflow-x-auto">
+                <table className="data-table dense">
+                  <thead>
+                    <tr>
+                      <th>Kind of work</th>
+                      <th className="num">Jobs</th>
+                      <th className="num">Revenue</th>
+                      <th className="num">Cost</th>
+                      <th className="num">Profit</th>
+                      <th className="num">Margin</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ledger.by_service_line.map((kind) => (
+                      <tr key={kind.service_line}>
+                        <td>{words(kind.service_line)}</td>
+                        <td className="num">{kind.jobs}</td>
+                        <td className="num">{money(kind.revenue)}</td>
+                        <td className="num">{money(kind.cost)}</td>
+                        <td className={`num ${Number(kind.profit) < 0 ? 'text-neg' : ''}`}>{money(kind.profit)}</td>
+                        <td className="num">{percent(kind.margin_pct)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           </>
         )}
       </Loaded>
@@ -306,21 +383,25 @@ function OperationsOverview({ summary }: { summary: Summary }) {
               <div className={STATS}>
                 <Stat
                   label="Urgent jobs, damage to on site"
+                  icon={Siren}
                   value={median === null ? 'No dates' : `${median} ${median === 1 ? 'day' : 'days'}`}
                   note={`Median. ${onTime} of ${data.urgent.length} on site the day they were won`}
                 />
                 <Stat
                   label="Won, not yet on site"
+                  icon={CalendarClock}
                   value={data.waiting.length}
                   note={slow ? `${plural(slow, 'job')} slower than ${data.start_tolerance_days} days` : 'All within tolerance'}
                 />
                 <Stat
                   label="In progress, off pace"
+                  icon={Gauge}
                   value={`${offPace} of ${data.in_progress.length}`}
                   note={`${stalled} stalled, ${ahead} spending ahead of schedule`}
                 />
                 <Stat
                   label="Active jobs with no ops manager"
+                  icon={UserX}
                   value={unownedJobs}
                   note={`of ${plural(data.in_progress.length + data.waiting.length, 'active job')}`}
                 />
@@ -540,14 +621,20 @@ function MyOverview({ summary, owner }: { summary: Summary; owner: string }) {
       <PageHead title="My jobs" aside={summary.job_count} sub={`As of ${longDate(summary.as_of)}`} />
 
       <div className={STATS}>
-        <Stat label="Owed by customers" value={money(cash.owed)} note={<PastDue amount={cash.past_due} />} />
-        <Stat label="Invoices not sent" value={money(cash.invoices_not_sent)} note={plural(cash.invoices_not_sent_count, 'invoice')} />
+        <Stat label="Owed by customers" icon={Receipt} value={money(cash.owed)} note={<PastDue amount={cash.past_due} />} />
         <Stat
+          label="Invoices not sent"
+          icon={Send}
+          value={money(cash.invoices_not_sent)}
+          note={plural(cash.invoices_not_sent_count, 'invoice')}
+        />
+        <Stat
+          icon={FileText}
           label="Vendor bills unpaid"
           value={money(cash.vendor_bills_unpaid)}
           note={`${plural(cash.vendor_bills_count, 'bill')} on my jobs`}
         />
-        <Stat label="Needs me" value={summary.open_item_count} note={`across ${plural(summary.jobs_with_issues, 'job')}`} />
+        <Stat label="Needs me" icon={ClipboardList} value={summary.open_item_count} note={`across ${plural(summary.jobs_with_issues, 'job')}`} />
       </div>
 
       <Card>

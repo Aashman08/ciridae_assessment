@@ -178,7 +178,7 @@ such as `"246300.00"`. Errors always look like
 | POST | `/issues/{id}/coding` | Suggest which job an unassigned vendor bill belongs to, with confidence and reasons |
 | POST | `/issues/{id}/actions` | `update` saves any of a note, a new owner and a follow-up date together; `resolve` and `reopen` change its status |
 | GET | `/people` | Who an issue can be assigned to |
-| GET | `/finance` | The ledger's view: revenue, cost, invoiced and collected by month, cost by cost code, receivables by days late, profit by kind of work |
+| GET | `/finance` | The ledger's view: revenue, cost, invoiced and collected by month and by week, each with running totals to date; cost by cost code with each code's share and the total logged; receivables by days late, profit by kind of work |
 | GET | `/sources` | The three source systems: tables and records held, and when last read |
 | GET | `/customer-balances` | What each customer owes, largest first |
 | POST | `/ask` | Ask a question in plain words. Returns the answer as plain text (`answer`) and laid out for display (`spec`), the lookups used and the records it rests on, and saves the exchange |

@@ -1,5 +1,6 @@
 import type { UseQueryResult } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, Search } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { ApiError } from '../lib/api'
@@ -22,10 +23,25 @@ export function CardHead({ title, children }: { title: string; children?: ReactN
 }
 
 /** A number, what it counts, and what it compares to. Nothing decorative. */
-export function Stat({ label, value, note }: { label: string; value: ReactNode; note: ReactNode }) {
+interface StatProps {
+  label: string
+  value: ReactNode
+  note: ReactNode
+  /** An icon for what the figure is about. Every stat card's icon is the same blue circle. */
+  icon?: LucideIcon
+}
+
+export function Stat({ label, value, note, icon: Icon }: StatProps) {
   return (
     <Card className="flex flex-col gap-3 p-5">
-      <span className="text-ink-2">{label}</span>
+      <span className="flex items-start justify-between gap-3">
+        <span className="text-ink-2">{label}</span>
+        {Icon && (
+          <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-soft text-brand-ink">
+            <Icon size="1rem" strokeWidth={1.5} />
+          </span>
+        )}
+      </span>
       <span className="text-[1.75rem] leading-7 font-medium tabular-nums">{value}</span>
       <span className="font-mono text-xs leading-4 text-muted">{note}</span>
     </Card>
@@ -470,7 +486,7 @@ export function Toggle({ checked, onChange, label, disabled }: ToggleProps) {
       onClick={() => onChange(!checked)}
       className={cx(
         'inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors duration-150 ease-out',
-        checked ? 'bg-ink' : 'bg-raised ring-1 ring-hair ring-inset',
+        checked ? 'bg-brand' : 'bg-raised ring-1 ring-hair ring-inset',
       )}
     >
       <span

@@ -59,6 +59,13 @@ def cost_for(fin: JobFinancials, basis: CostBasis) -> Decimal:
     }[basis]
 
 
+def share_pct(part: Decimal, whole: Decimal) -> Decimal:
+    """A part as a share of its whole, to one decimal. Zero when the whole is nothing."""
+    if whole <= 0:
+        return ZERO
+    return (part / whole * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+
+
 def margin_pct(revenue: Decimal, cost: Decimal) -> Decimal | None:
     """Profit as a share of revenue, to one decimal. None when there is no revenue."""
     if revenue <= 0:

@@ -7,30 +7,58 @@
   Product   Shows Harborstone's finance and project teams where a job's cost,
             billing and cash disagree across its three systems.
   Character Exact, steady, practical.
-  Chrome    One graphite ramp, three text roles, hairline borders. Nothing glows.
+  Chrome    A cool slate ramp, white cards, three text roles, hairline borders.
+  Brand     One blue, for what is active or primary: the open page, main buttons, switches.
+  Tints     Soft colour that means one thing everywhere: blue customer money, violet
+            vendors, pink cost, teal schedule, slate ownership, red late or failed,
+            amber waiting on someone, green saved or done. Tags, icons, chips only.
   Accent    Hi-vis amber, spent only on what needs a person.
   Rhythm    Every size and gap sits on a 4px grid. Rows are 36, 48 or 56 tall.
 */
 
 :root {
-  --bg: #fafafa;
+  --bg: #eef0f3;
   --card: #ffffff;
-  --raised: #f4f4f5;
-  --side: #f4f4f5;
-  --ink: #171717;
-  --ink-2: #525252;
-  --muted: #737373;
-  --hair: rgb(23 23 23 / 0.09);
+  --raised: #e9ecf0;
+  --side: #ffffff;
+  --side-hover: #f3f5f7;
+  --side-active: #e6e9ee;
+  --ink: #171a1f;
+  --ink-2: #454a53;
+  --muted: #5d626b;
+  --hair: rgb(15 23 42 / 0.1);
   --accent: #f5b301;
   --on-accent: #1f1600;
-  --accent-ink: #8a5d00;
-  --btn: #171717;
+  --accent-ink: #7a5200;
+  --brand: #2563eb;
+  --brand-ink: #1d4ed8;
+  --brand-soft: #e7effd;
+  --btn: #2563eb;
   --btn-ink: #ffffff;
+  /* Tints: a soft fill with darker text of the same hue. Each pair reads at 4.8:1 or better. */
+  --tint-blue: #e7effd;
+  --tint-blue-ink: #1d4ed8;
+  --tint-violet: #efeafd;
+  --tint-violet-ink: #6d28d9;
+  --tint-green: #e2f4ea;
+  --tint-green-ink: #13714a;
+  --tint-amber: #fcf0d4;
+  --tint-amber-ink: #8a5300;
+  --tint-red: #fde8e6;
+  --tint-red-ink: #b42318;
+  --tint-pink: #fce7f1;
+  --tint-pink-ink: #be185d;
+  --tint-teal: #dcf2ef;
+  --tint-teal-ink: #0e6f68;
+  --tint-slate: #e9ecf1;
+  --tint-slate-ink: #475467;
   --neg: #dc2626;
   /* Chart series, in fixed order. Checked for colour-blind separation on --card. */
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --series-3: #1baf7a;
+  --series-1: #3154ca;
+  --series-2: #6cc697;
+  --series-3: #559cd7;
+  --series-4: #eeb559;
+  --series-5: #66b5c4;
   --lift: 0 1px 2px rgb(0 0 0 / 0.05);
   --float: 0 8px 24px rgb(0 0 0 / 0.12);
   --scrim: rgb(23 23 23 / 0.32);
@@ -44,7 +72,9 @@
     --bg: #141415;
     --card: #19191b;
     --raised: #232325;
-    --side: #0f0f10;
+    --side: #19191b;
+    --side-hover: #222225;
+    --side-active: #2c2c30;
     --ink: #ededed;
     --ink-2: #a1a1a6;
     --muted: #85858b;
@@ -52,12 +82,33 @@
     --accent: #f5b301;
     --on-accent: #1f1600;
     --accent-ink: #f5b301;
-    --btn: #ededed;
-    --btn-ink: #141415;
+    --brand: #5b8def;
+    --brand-ink: #93b8ff;
+    --brand-soft: rgb(59 130 246 / 0.18);
+    --btn: #2563eb;
+    --btn-ink: #ffffff;
+    --tint-blue: rgb(59 130 246 / 0.18);
+    --tint-blue-ink: #93b8ff;
+    --tint-violet: rgb(139 92 246 / 0.2);
+    --tint-violet-ink: #c4b5fd;
+    --tint-green: rgb(34 197 94 / 0.16);
+    --tint-green-ink: #7ee2a8;
+    --tint-amber: rgb(245 179 1 / 0.16);
+    --tint-amber-ink: #fcd34d;
+    --tint-red: rgb(240 68 56 / 0.18);
+    --tint-red-ink: #fda29b;
+    --tint-pink: rgb(236 72 153 / 0.18);
+    --tint-pink-ink: #f9a8d4;
+    --tint-teal: rgb(20 184 166 / 0.18);
+    --tint-teal-ink: #6fe3d3;
+    --tint-slate: rgb(148 163 184 / 0.16);
+    --tint-slate-ink: #cbd5e1;
     --neg: #e5484d;
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
+    --series-1: #4a6be0;
+    --series-2: #6cc697;
+    --series-3: #5fa6e0;
+    --series-4: #eeb559;
+    --series-5: #6fc0cf;
     --lift: none;
     --float: 0 8px 24px rgb(0 0 0 / 0.5);
     --scrim: rgb(0 0 0 / 0.6);
@@ -69,7 +120,9 @@
   --bg: #141415;
   --card: #19191b;
   --raised: #232325;
-  --side: #0f0f10;
+  --side: #19191b;
+  --side-hover: #222225;
+  --side-active: #2c2c30;
   --ink: #ededed;
   --ink-2: #a1a1a6;
   --muted: #85858b;
@@ -77,12 +130,33 @@
   --accent: #f5b301;
   --on-accent: #1f1600;
   --accent-ink: #f5b301;
-  --btn: #ededed;
-  --btn-ink: #141415;
+  --brand: #5b8def;
+  --brand-ink: #93b8ff;
+  --brand-soft: rgb(59 130 246 / 0.18);
+  --btn: #2563eb;
+  --btn-ink: #ffffff;
+  --tint-blue: rgb(59 130 246 / 0.18);
+  --tint-blue-ink: #93b8ff;
+  --tint-violet: rgb(139 92 246 / 0.2);
+  --tint-violet-ink: #c4b5fd;
+  --tint-green: rgb(34 197 94 / 0.16);
+  --tint-green-ink: #7ee2a8;
+  --tint-amber: rgb(245 179 1 / 0.16);
+  --tint-amber-ink: #fcd34d;
+  --tint-red: rgb(240 68 56 / 0.18);
+  --tint-red-ink: #fda29b;
+  --tint-pink: rgb(236 72 153 / 0.18);
+  --tint-pink-ink: #f9a8d4;
+  --tint-teal: rgb(20 184 166 / 0.18);
+  --tint-teal-ink: #6fe3d3;
+  --tint-slate: rgb(148 163 184 / 0.16);
+  --tint-slate-ink: #cbd5e1;
   --neg: #e5484d;
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
+  --series-1: #4a6be0;
+  --series-2: #6cc697;
+  --series-3: #5fa6e0;
+  --series-4: #eeb559;
+  --series-5: #6fc0cf;
   --lift: none;
   --float: 0 8px 24px rgb(0 0 0 / 0.5);
   --scrim: rgb(0 0 0 / 0.6);
@@ -97,6 +171,8 @@
   --color-card: var(--card);
   --color-raised: var(--raised);
   --color-side: var(--side);
+  --color-side-hover: var(--side-hover);
+  --color-side-active: var(--side-active);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-muted: var(--muted);
@@ -104,10 +180,29 @@
   --color-accent: var(--accent);
   --color-on-accent: var(--on-accent);
   --color-accent-ink: var(--accent-ink);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
   --color-btn: var(--btn);
   --color-btn-ink: var(--btn-ink);
   --color-neg: var(--neg);
   --color-scrim: var(--scrim);
+  --color-tint-blue: var(--tint-blue);
+  --color-tint-blue-ink: var(--tint-blue-ink);
+  --color-tint-violet: var(--tint-violet);
+  --color-tint-violet-ink: var(--tint-violet-ink);
+  --color-tint-green: var(--tint-green);
+  --color-tint-green-ink: var(--tint-green-ink);
+  --color-tint-amber: var(--tint-amber);
+  --color-tint-amber-ink: var(--tint-amber-ink);
+  --color-tint-red: var(--tint-red);
+  --color-tint-red-ink: var(--tint-red-ink);
+  --color-tint-pink: var(--tint-pink);
+  --color-tint-pink-ink: var(--tint-pink-ink);
+  --color-tint-teal: var(--tint-teal);
+  --color-tint-teal-ink: var(--tint-teal-ink);
+  --color-tint-slate: var(--tint-slate);
+  --color-tint-slate-ink: var(--tint-slate-ink);
 
   --shadow-lift: var(--lift);
   --shadow-float: var(--float);

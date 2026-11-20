@@ -4,6 +4,8 @@ import type { ReactNode } from 'react'
 import type { Item } from '../lib/api'
 import { dateTime, longDate, money, shortDate } from '../lib/format'
 import { cx } from '../lib/styles'
+import { KIND, TONE, tagTone } from '../lib/tones'
+import type { Tone } from '../lib/tones'
 import { Records } from './Records'
 import { useItemWork } from './useItemWork'
 import { Button, Empty } from './ui'
@@ -30,15 +32,16 @@ const OWNER_ROLES: Record<Item['owner_role'], string> = {
   assigned: 'assigned by hand',
 }
 
-function Tag({ children, attention = false }: { children: ReactNode; attention?: boolean }) {
+function Tag({ children, tone }: { children: ReactNode; tone: Tone }) {
+  return <span className={cx('inline-flex h-6 items-center rounded-md px-2 text-xs whitespace-nowrap', TONE[tone])}>{children}</span>
+}
+
+/** What kind of thing an item is, as a small tinted icon in its colour. */
+export function KindIcon({ kind }: { kind: Item['kind'] }) {
+  const { tone, icon: Icon } = KIND[kind]
   return (
-    <span
-      className={cx(
-        'inline-flex h-6 items-center rounded-md px-2 text-xs whitespace-nowrap ring-1 ring-hair ring-inset',
-        attention ? 'bg-card text-accent-ink' : 'bg-raised text-ink-2',
-      )}
-    >
-      {children}
+    <span aria-hidden className={cx('grid size-7 shrink-0 place-items-center rounded-lg', TONE[tone])}>
+      <Icon size="1rem" strokeWidth={1.5} />
     </span>
   )
 }
@@ -48,11 +51,11 @@ export function Tags({ tags, waitingUntil }: { tags: Item['tags']; waitingUntil?
   return (
     <span className="flex flex-wrap gap-1">
       {tags.map((tag) => (
-        <Tag key={tag.key} attention={tag.key === 'late' || tag.key === 'discount'}>
+        <Tag key={tag.key} tone={tagTone(tag.key)}>
           {tag.label}
         </Tag>
       ))}
-      {waitingUntil && <Tag>Waiting until {shortDate(waitingUntil)}</Tag>}
+      {waitingUntil && <Tag tone="blue">Waiting until {shortDate(waitingUntil)}</Tag>}
     </span>
   )
 }
@@ -207,12 +210,13 @@ export function ItemTable({ items, showJob = false, empty = 'Nothing needs fixin
                       {/* The button keeps the row reachable by keyboard; the row click covers everywhere else. */}
                       <button
                         type="button"
-                        className="text-left font-medium"
+                        className="flex items-center gap-3 text-left font-medium"
                         onClick={(event) => {
                           event.stopPropagation()
                           setOpen(expanded ? null : item.key)
                         }}
                       >
+                        <KindIcon kind={item.kind} />
                         {item.title}
                       </button>
                     </td>

@@ -7,6 +7,7 @@ import type { Coding, Draft, Item } from '../lib/api'
 import { suggestionsFor, useAssistant, usePage } from '../lib/assistant'
 import { useConversation } from '../lib/conversation'
 import { money } from '../lib/format'
+import { cx } from '../lib/styles'
 import { FOLLOW_UP_WORKING_DAYS } from '../lib/items'
 import { composeUrl, useMailApp } from '../lib/mail'
 import { useViewer } from '../lib/viewer'
@@ -412,7 +413,11 @@ export function AssistantPane() {
   return (
     <aside
       aria-label={title}
-      className="fixed inset-y-0 right-0 z-30 flex w-full flex-col border-l border-hair bg-bg shadow-float sm:w-[26rem] 2xl:sticky 2xl:top-0 2xl:z-auto 2xl:h-dvh 2xl:w-auto 2xl:shadow-none"
+      className={cx(
+        'fixed inset-y-0 right-0 z-30 flex w-full flex-col border-l border-hair bg-bg shadow-float',
+        '2xl:sticky 2xl:top-0 2xl:z-auto 2xl:h-dvh 2xl:w-auto 2xl:shadow-none',
+        view.kind === 'document' ? 'sm:w-[38rem]' : 'sm:w-[26rem]',
+      )}
     >
       <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-hair px-4">
         <h2 className="font-medium">{title}</h2>
