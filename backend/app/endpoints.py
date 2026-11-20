@@ -20,6 +20,7 @@ from app.schemas import (
     DraftRequest,
     DraftResponse,
     IssueTypeResponse,
+    SourceSystem,
     PersonResponse,
     IssueTypeUpdate,
     JobDetailResponse,
@@ -263,6 +264,12 @@ async def draft_follow_up(issue_id: int, payload: DraftRequest, request: Request
 async def suggest_job_for_issue(issue_id: int, request: Request) -> CodingResponse:
     async with create_recon_client(request.state.request_id) as client:
         return await client.suggest_job_for_issue(issue_id)
+
+
+@router.get("/sources", tags=["Sync Runs"], summary="The source systems and when each was last read", response_model=list[SourceSystem])
+async def list_sources(request: Request) -> list[SourceSystem]:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.list_sources()
 
 
 @router.get("/people", tags=["Issues"], summary="Who an issue can be assigned to", response_model=list[PersonResponse])

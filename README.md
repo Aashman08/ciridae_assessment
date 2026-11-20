@@ -106,6 +106,7 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 | Issues | The work queue, with severity, days late, owner and follow-up date; filter by status, severity, type and owner, and sort by any heading. **Log update** on a row records what someone has done, hands the issue to someone else, or sets a date to come back to it. It never contacts anyone or changes an invoice or bill. Saving keeps the issue open; resolving is a separate choice |
 | Issue | What is wrong, what to do, the records behind it and the untouched source row for each, plus its history |
 | Customer invoices, Vendor bills | Every invoice and bill across jobs |
+| Connectors | The three source systems with how much of each was read and when, and the email account a follow-up is sent with |
 | Issue types | The thirteen checks, with an on/off switch and tolerance for each. **Sync now** here applies a change straight away |
 
 | Folder | Holds |
@@ -168,6 +169,7 @@ such as `"246300.00"`. Errors always look like
 | POST | `/issues/{id}/coding` | Suggest which job an unassigned vendor bill belongs to, with confidence and reasons |
 | POST | `/issues/{id}/actions` | `update` saves any of a note, a new owner and a follow-up date together; `resolve` and `reopen` change its status |
 | GET | `/people` | Who an issue can be assigned to |
+| GET | `/sources` | The three source systems: tables and records held, and when last read |
 | GET | `/customer-balances` | What each customer owes, largest first |
 | POST | `/ask` | Ask a question in plain words. Returns the answer as plain text (`answer`) and laid out for display (`spec`), the lookups used and the records it rests on, and saves the exchange |
 | GET, DELETE | `/ask/history?asked_by=` | Read or clear one person's saved conversation |
@@ -181,7 +183,7 @@ such as `"246300.00"`. Errors always look like
 |---|---|---|
 | **Ask** (`assistant.py`) | Chooses which fixed lookups to run and writes the answer as text, tables, figures and charts | Every figure comes from a lookup. The page it was asked from only names a job or issue; the tools decide what the person may see |
 | **Bill coding** (`coding.py`) | Works out which job an unassigned vendor bill belongs to, from the bill's lines, the email it arrived on, the vendor's history and what each job is spending on. Says how sure it is, and can answer "not a job cost" or "not sure" | It may only name a job it was shown. A low-confidence job is reported as "not sure". A person accepts or rejects; nothing is written to accounting |
-| **Follow-up drafts** (`drafts.py`) | Writes the words of a message about an issue | Who it goes to, their address and every fact it may use are chosen by code. Each dollar figure in the draft is checked against those facts. Nothing is sent |
+| **Follow-up drafts** (`drafts.py`) | Writes the words of a message about an issue | Who it goes to, their address and every fact it may use are chosen by code. Each dollar figure in the draft is checked against those facts. **Send** opens the message in the person's own Gmail, Outlook or mail app for them to send; the app has no mailbox access and sends nothing itself |
 
 ### How the bill coder is tested
 

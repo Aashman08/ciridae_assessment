@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Card, Loaded, PageHead } from '../components/ui'
+import { Button, Card, Loaded, PageHead, Toggle } from '../components/ui'
 import { api } from '../lib/api'
 import type { IssueType } from '../lib/api'
 import { money } from '../lib/format'
@@ -78,23 +78,12 @@ function Switch({ type }: { type: IssueType }) {
   })
 
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={type.enabled}
-      aria-label={`Check for ${type.title}`}
+    <Toggle
+      checked={type.enabled}
+      onChange={() => toggle.mutate()}
+      label={`Check for ${type.title}`}
       disabled={toggle.isPending}
-      onClick={() => toggle.mutate()}
-      className={`inline-flex h-5 w-9 items-center rounded-full p-0.5 transition-colors duration-150 ease-out ${
-        type.enabled ? 'bg-ink' : 'bg-raised ring-1 ring-hair ring-inset'
-      }`}
-    >
-      <span
-        className={`size-4 rounded-full transition-transform duration-150 ease-out ${
-          type.enabled ? 'translate-x-4 bg-card' : 'bg-muted'
-        }`}
-      />
-    </button>
+    />
   )
 }
 

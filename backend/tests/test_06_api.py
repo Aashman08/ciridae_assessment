@@ -74,7 +74,7 @@ async def test_summary_for_finance(api):
         "vendor_bills_count": 18,
         "invoice_count": 21,
     }
-    assert body["contract_to_cash"] == {
+    assert {key: value for key, value in body["contract_to_cash"].items() if key != "stages"} == {
         "contract_value": "5151450.00",
         "earned": "3249200.00",
         "invoiced": "3174100.00",
@@ -359,7 +359,7 @@ async def test_openapi_describes_every_route(api):
     assert {
         "/health", "/api/v1/ask", "/api/v1/ask/history", "/api/v1/customer-balances", "/api/v1/sync-runs", "/api/v1/sync-runs/{run_id}", "/api/v1/summary", "/api/v1/jobs",
         "/api/v1/jobs/{job_number}", "/api/v1/jobs/{job_number}/lines", "/api/v1/lines", "/api/v1/issues",
-        "/api/v1/issues/{issue_id}", "/api/v1/issues/{issue_id}/actions", "/api/v1/issues/{issue_id}/draft", "/api/v1/issues/{issue_id}/coding", "/api/v1/issue-types", "/api/v1/people",
+        "/api/v1/issues/{issue_id}", "/api/v1/issues/{issue_id}/actions", "/api/v1/issues/{issue_id}/draft", "/api/v1/issues/{issue_id}/coding", "/api/v1/issue-types", "/api/v1/people", "/api/v1/sources",
         "/api/v1/issue-types/{key}", "/api/v1/source-records/{record_id}",
     } == set(paths)
 
@@ -506,3 +506,44 @@ async def test_an_update_saves_a_note_an_owner_and_a_follow_up_date_together(api
 
     # Hand it back so later tests see the export's own owner.
     await api.post(path, json={"action": "update", "actor": "Rachel Kim", "assignee": issue["owner"]})
+
+
+async def test_sources_say_what_was_read_and_when(api, db):
+    from sqlalchemy import text
+
+    held = {
+        system: (tables, records)
+        for system, tables, records in await db.execute(text(
+            "select system, count(distinct table_name), count(*) from raw.source_record group by system"
+        ))
+    }
+    sources = await get(api, "/sources")
+    assert [s["system"] for s in sources] == ["crm", "project", "accounting"]
+    for source in sources:
+        assert (source["tables"], source["records"]) == held[source["system"]]
+        assert source["records"] > 100 and source["last_read_at"]
+
+
+async def test_contract_value_is_split_by_how_far_it_has_got(api):
+    """The parts add up to the contract value, so a bar of them is the whole."""
+    flow = (await get(api, "/summary"))["contract_to_cash"]
+    stages = {stage["key"]: Decimal(stage["amount"]) for stage in flow["stages"]}
+    assert list(stages) == ["collected", "sent_not_collected", "invoiced_not_sent", "earned_not_invoiced", "not_yet_earned"]
+    assert sum(stages.values()) == Decimal(flow["contract_value"])
+    assert stages["collected"] == Decimal(flow["collected"])
+    assert stages["sent_not_collected"] == Decimal(flow["sent"]) - Decimal(flow["collected"])
+    assert stages["invoiced_not_sent"] == Decimal("369100.00")
+    assert abs(sum(Decimal(stage["share_pct"]) for stage in flow["stages"]) - 100) <= Decimal("0.2")
+
+
+def test_a_stage_that_runs_ahead_never_goes_negative():
+    from app.financials import contract_stages
+
+    # Invoiced ahead of what the ledger shows as earned.
+    parts = {p["key"]: p["amount"] for p in contract_stages(Decimal(100), Decimal(40), Decimal(60), Decimal(50), Decimal(20))}
+    assert parts == {
+        "collected": Decimal(20), "sent_not_collected": Decimal(30), "invoiced_not_sent": Decimal(10),
+        "earned_not_invoiced": Decimal(0), "not_yet_earned": Decimal(40),
+    }
+    assert sum(parts.values()) == Decimal(100)
+    assert all(p["share_pct"] == 0 for p in contract_stages(Decimal(0), Decimal(0), Decimal(0), Decimal(0), Decimal(0)))

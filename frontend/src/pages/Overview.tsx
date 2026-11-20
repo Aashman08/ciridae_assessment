@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { IssueTable } from '../components/IssueTable'
 import { JobTable } from '../components/JobTable'
-import { BarRow, Card, CardHead, Loaded, PageHead, Stat } from '../components/ui'
+import { Card, CardHead, Loaded, PageHead, Stat } from '../components/ui'
 import { api } from '../lib/api'
 import type { Summary } from '../lib/api'
-import { longDate, money, monthAndYear, plural } from '../lib/format'
+import { longDate, money, monthAndYear, percent, plural } from '../lib/format'
 import { buttonClass } from '../lib/styles'
 import { useViewer } from '../lib/viewer'
 
@@ -76,11 +77,109 @@ function IssuesByType({ summary }: { summary: Summary }) {
   )
 }
 
+type Stage = Summary['contract_to_cash']['stages'][number]
+
+// Each part of the contract value: what to call it, how dark to draw it, and where its detail is.
+// One hue from dark to light follows the money from in the bank to not yet earned.
+const STAGES: Record<Stage['key'], { label: string; ink: number; to?: string }> = {
+  collected: { label: 'Collected', ink: 88 },
+  sent_not_collected: { label: 'Sent, not collected', ink: 62, to: '/invoices?balance=open' },
+  invoiced_not_sent: { label: 'Invoiced, not sent', ink: 42, to: '/issues?type=not_sent' },
+  earned_not_invoiced: { label: 'Earned, not invoiced', ink: 26 },
+  not_yet_earned: { label: 'Not yet earned', ink: 12 },
+}
+
+function shade(key: Stage['key']): string {
+  return `color-mix(in oklab, var(--ink) ${STAGES[key].ink}%, var(--card))`
+}
+
+/**
+ * The contract value as one bar, split by how far each dollar has got on its
+ * way to the bank. The widths show where the money is sitting; the table under
+ * it gives each part's figure.
+ */
+function ContractFlow({ flow }: { flow: Summary['contract_to_cash'] }) {
+  const navigate = useNavigate()
+  const [active, setActive] = useState<Stage['key'] | null>(null)
+
+  return (
+    <Card>
+      <CardHead title="From contract to cash, all jobs">
+        <p className="text-[0.8125rem] text-ink-2">
+          Contract value <span className="pl-2 font-mono text-ink tabular-nums">{money(flow.contract_value)}</span>
+        </p>
+      </CardHead>
+
+      <div className="px-5 pb-4">
+        <div role="img" aria-label="Contract value by how far it has got" className="flex h-10 gap-0.5 overflow-hidden rounded-lg">
+          {flow.stages
+            .filter((stage) => Number(stage.amount) > 0)
+            .map((stage) => (
+              <span
+                key={stage.key}
+                title={`${STAGES[stage.key].label}: ${money(stage.amount)}, ${percent(stage.share_pct)}`}
+                onMouseEnter={() => setActive(stage.key)}
+                onMouseLeave={() => setActive(null)}
+                className="min-w-1 transition-opacity duration-150 ease-out"
+                style={{
+                  flexGrow: Number(stage.amount),
+                  flexBasis: 0,
+                  background: shade(stage.key),
+                  opacity: active && active !== stage.key ? 0.35 : 1,
+                }}
+              />
+            ))}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Where it is</th>
+              <th className="num">Amount</th>
+              <th className="num">Share of contract</th>
+            </tr>
+          </thead>
+          <tbody>
+            {flow.stages.map((stage) => {
+              const { label, to } = STAGES[stage.key]
+              return (
+                <tr
+                  key={stage.key}
+                  className={to ? 'clickable' : undefined}
+                  onClick={to ? () => navigate(to) : undefined}
+                  onMouseEnter={() => setActive(stage.key)}
+                  onMouseLeave={() => setActive(null)}
+                >
+                  <td>
+                    <span className="flex items-center gap-3">
+                      <span aria-hidden className="size-3 shrink-0 rounded-sm ring-1 ring-hair ring-inset" style={{ background: shade(stage.key) }} />
+                      {to ? (
+                        <Link to={to} onClick={(event) => event.stopPropagation()}>
+                          {label}
+                        </Link>
+                      ) : (
+                        label
+                      )}
+                    </span>
+                  </td>
+                  <td className="num">{money(stage.amount)}</td>
+                  <td className="num text-ink-2">{percent(stage.share_pct)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
 /** Finance's view: the whole company's cash position and where the systems disagree. */
 function CompanyOverview({ summary }: { summary: Summary }) {
   const { cash, contract_to_cash: flow } = summary
   const first = useQuery({ queryKey: ['jobs', 'first-six'], queryFn: () => api.jobs({ limit: 6 }) })
-  const contract = Number(flow.contract_value)
 
   return (
     <>
@@ -101,20 +200,7 @@ function CompanyOverview({ summary }: { summary: Summary }) {
         />
       </div>
 
-      <Card>
-        <CardHead title="From contract to cash, all jobs" />
-        <div className="flex flex-col gap-2 px-5 pb-4">
-          <BarRow label="Contract value" amount={contract} max={contract} tone="outline" />
-          <BarRow label="Earned, per ledger" amount={Number(flow.earned)} max={contract} />
-          <BarRow label="Invoiced" amount={Number(flow.invoiced)} max={contract} />
-          <BarRow label="Sent to customers" amount={Number(flow.sent)} max={contract} />
-          <BarRow label="Collected" amount={Number(flow.collected)} max={contract} />
-        </div>
-        <p className="px-5 pb-5 text-xs leading-4 text-muted">
-          {money(Number(flow.invoiced) - Number(flow.sent))} is invoiced but not sent.{' '}
-          {money(Number(flow.sent) - Number(flow.collected))} is sent but not collected
-        </p>
-      </Card>
+      <ContractFlow flow={flow} />
 
       <IssuesByType summary={summary} />
 

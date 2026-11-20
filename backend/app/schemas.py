@@ -311,12 +311,21 @@ class CashSummary(BaseModel):
     invoice_count: int
 
 
+class ContractStage(BaseModel):
+    key: Literal["collected", "sent_not_collected", "invoiced_not_sent", "earned_not_invoiced", "not_yet_earned"]
+    amount: Money
+    share_pct: Percent = Field(description="This part as a share of the contract value")
+
+
 class ContractToCash(BaseModel):
     contract_value: Money
     earned: Money
     invoiced: Money
     sent: Money
     collected: Money
+    stages: list[ContractStage] = Field(
+        description="The contract value split by how far it has got: each part has reached one stage and not the next"
+    )
 
 
 class IssuesByType(BaseModel):
@@ -346,6 +355,15 @@ class SummaryResponse(BaseModel):
         description="The invoices and bills with at least one open issue, each counted once however many issues name it, "
         "and what is unpaid on them"
     )
+
+
+class SourceSystem(BaseModel):
+    """One of Harborstone's systems, as we last read it."""
+
+    system: Literal["crm", "project", "accounting"]
+    tables: int = Field(description="How many of its tables we read")
+    records: int = Field(description="How many of its rows we hold a copy of")
+    last_read_at: datetime | None = Field(description="When the last sync that read it finished")
 
 
 # --- Source records ------------------------------------------------------------

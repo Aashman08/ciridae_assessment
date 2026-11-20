@@ -37,7 +37,15 @@ from app.errors import (
     SourceRecordNotFoundError,
     SyncRunNotFoundError,
 )
-from app.financials import LEDGER_MARGIN, LEDGER_PROFIT, CostBasis, RevenueBasis, compute_financials, latest_run_id
+from app.financials import (
+    LEDGER_MARGIN,
+    LEDGER_PROFIT,
+    CostBasis,
+    RevenueBasis,
+    compute_financials,
+    contract_stages,
+    latest_run_id,
+)
 from app.issues import DOCUMENT_TYPES, FINANCE_QUEUE, UNSENT_STATUSES, apply_action, find_issues
 from app.landing import land
 from app.models import (
@@ -67,6 +75,7 @@ from app.schemas import (
     DraftResponse,
     PersonResponse,
     Recipient,
+    SourceSystem,
     MonthTotal,
     ContractToCash,
     IssueAction,
@@ -291,6 +300,7 @@ class ReconClient:
                 invoiced=jobs.invoiced,
                 sent=jobs.sent,
                 collected=jobs.collected,
+                stages=contract_stages(jobs.contract_value, jobs.earned, jobs.invoiced, jobs.sent, jobs.collected),
             ),
             open_issue_count=sum(row.count for row in by_type),
             jobs_with_issues=jobs_with_issues,
@@ -810,6 +820,22 @@ class ReconClient:
         return messages
 
     # --- Source records ----------------------------------------------------------
+
+    async def list_sources(self) -> list[SourceSystem]:
+        """The three systems the figures come from, with how much of each we hold and when it was last read."""
+        last_read = await self.db.scalar(
+            select(SyncRun.finished_at).where(SyncRun.status == "succeeded").order_by(SyncRun.id.desc()).limit(1)
+        )
+        rows = await self.db.execute(
+            select(SourceRecord.system, func.count(SourceRecord.table_name.distinct()), func.count())
+            .where(SourceRecord.system.in_(("crm", "project", "accounting")))
+            .group_by(SourceRecord.system)
+        )
+        found = {system: (tables, records) for system, tables, records in rows}
+        return [
+            SourceSystem(system=system, tables=found.get(system, (0, 0))[0], records=found.get(system, (0, 0))[1], last_read_at=last_read)
+            for system in ("crm", "project", "accounting")
+        ]
 
     async def get_source_record(self, record_id: int) -> SourceRecordResponse:
         """The untouched source row behind any number."""

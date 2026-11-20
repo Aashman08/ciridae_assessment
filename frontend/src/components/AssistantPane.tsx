@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, X } from 'lucide-react'
+import { Check, Copy, RotateCcw, SendHorizontal, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
@@ -7,6 +7,7 @@ import type { Coding, Draft, Issue } from '../lib/api'
 import { suggestionsFor, useAssistant, usePage } from '../lib/assistant'
 import { useConversation } from '../lib/conversation'
 import { money } from '../lib/format'
+import { composeUrl, useMailApp } from '../lib/mail'
 import { useViewer } from '../lib/viewer'
 import { Composer, Messages, Working } from './Conversation'
 import { Button, ErrorNote } from './ui'
@@ -64,11 +65,148 @@ function About({ issue }: { issue: Issue }) {
   )
 }
 
-/** A message for the person to read, change and send themselves. Nothing leaves the app. */
-function DraftPreview({ issue }: { issue: Issue }) {
+/** The message as it came back, in the fields a person can change before sending. */
+function Compose({ issue, message, onAgain }: { issue: Issue; message: Draft; onAgain: () => void }) {
   const { viewer } = useViewer()
   const client = useQueryClient()
+  const [mail] = useMailApp()
+  const [to, setTo] = useState(message.recipient.email ?? '')
+  const [subject, setSubject] = useState(message.subject)
+  const [body, setBody] = useState(message.body)
+  const [opened, setOpened] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  const logged = useMutation({
+    mutationFn: () =>
+      api.actOnIssue(issue.id, {
+        action: 'update',
+        actor: viewer.name,
+        note: `Sent a follow-up to ${message.recipient.name}: ${subject}`,
+      }),
+    onSuccess: () => client.invalidateQueries({ predicate: (query) => query.queryKey[0] !== 'draft' }),
+  })
+
+  const ready = to.trim().includes('@') && subject.trim() !== '' && body.trim() !== ''
+
+  function send() {
+    // The message is handed to the person's own email, where they press send. This app cannot send mail.
+    const url = composeUrl(mail.key, { to: to.trim(), subject, body })
+    if (mail.key === 'default') window.location.href = url
+    else window.open(url, '_blank', 'noopener')
+    setOpened(true)
+  }
+
+  async function copy() {
+    await navigator.clipboard.writeText(`To: ${to}\nSubject: ${subject}\n\n${body}`)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const field = 'min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted'
+  const tool =
+    'grid size-8 place-items-center rounded-full text-muted transition-colors duration-150 ease-out hover:bg-raised hover:text-ink'
+
+  return (
+    <>
+      {/* Laid out as a new message is in any mail app: a title bar, To, Subject, the text, and Send at the bottom left. */}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (ready) send()
+        }}
+        className="flex flex-col overflow-hidden rounded-xl border border-hair bg-card shadow-float"
+      >
+        <p className="bg-raised px-4 py-2 text-[0.8125rem] font-medium">New message</p>
+        <label className="flex items-center gap-3 border-b border-hair px-4 py-2 text-[0.8125rem]">
+          <span className="text-muted">To</span>
+          <input
+            type="email"
+            value={to}
+            onChange={(event) => setTo(event.target.value)}
+            placeholder="No address on file. Type one"
+            className={field}
+          />
+        </label>
+        <label className="flex items-center gap-3 border-b border-hair px-4 py-2 text-[0.8125rem]">
+          <span className="text-muted">Subject</span>
+          <input value={subject} onChange={(event) => setSubject(event.target.value)} className={`${field} font-medium`} />
+        </label>
+        <label>
+          <span className="sr-only">Message</span>
+          <textarea
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            rows={Math.min(18, Math.max(8, body.split('\n').length + Math.ceil(body.length / 48)))}
+            className="block w-full resize-none bg-transparent px-4 py-3 leading-6 outline-none"
+          />
+        </label>
+        <div className="flex items-center gap-1 px-3 pb-3">
+          <button
+            type="submit"
+            disabled={!ready}
+            className="mr-2 inline-flex h-9 items-center gap-2 rounded-full bg-btn px-5 text-[0.8125rem] font-medium text-btn-ink transition-[transform,opacity] duration-150 ease-out active:scale-[0.98] disabled:opacity-50"
+          >
+            Send
+            <SendHorizontal {...ICON} />
+          </button>
+          <button type="button" title={copied ? 'Copied' : 'Copy message'} aria-label="Copy message" onClick={copy} className={tool}>
+            {copied ? <Check {...ICON} /> : <Copy {...ICON} />}
+          </button>
+          <button type="button" title="Write it again" aria-label="Write it again" onClick={onAgain} className={tool}>
+            <RotateCcw {...ICON} />
+          </button>
+        </div>
+      </form>
+
+      <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-[0.8125rem]">
+        <dt className="text-ink-2">Written to</dt>
+        <dd>
+          {message.recipient.name}, {message.recipient.role.charAt(0).toLowerCase() + message.recipient.role.slice(1)}
+        </dd>
+        <dt className="text-ink-2">Sends with</dt>
+        <dd className="flex flex-wrap items-center gap-x-2">
+          {mail.logo && <img src={mail.logo} alt="" className="size-4 object-contain" />}
+          {mail.name.charAt(0).toUpperCase() + mail.name.slice(1)}.{' '}
+          <Link to="/connectors" className="text-ink-2 underline underline-offset-2 hover:text-ink">
+            Change
+          </Link>
+        </dd>
+      </dl>
+
+      {message.warnings.length > 0 && (
+        <div className="text-[0.8125rem]">
+          <p className="font-medium text-accent-ink">Check before sending</p>
+          <ul className="mt-1 flex list-disc flex-col gap-1 pl-5 text-ink-2">
+            {message.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {opened && (
+        <div className="flex flex-col items-start gap-2 rounded-xl border border-hair bg-card p-4 text-[0.8125rem]">
+          <p>
+            The message is open in {mail.name}, ready to send. Once it has gone, log it so the issue shows what was done
+          </p>
+          <Button disabled={logged.isPending || logged.isSuccess} onClick={() => logged.mutate()}>
+            {logged.isSuccess ? 'Logged on the issue' : logged.isPending ? 'Logging' : 'Log that I sent it'}
+          </Button>
+          {logged.isError && <p className="text-neg">{logged.error.message}</p>}
+        </div>
+      )}
+
+      <p className="text-xs leading-4 text-muted">
+        Send opens this message in {mail.name} for you to send from your own address. Every figure in the draft was checked
+        against the records for this issue as of the last sync
+      </p>
+    </>
+  )
+}
+
+/** A drafted follow-up, shown as a message ready to send. The person sends it from their own email. */
+function DraftPreview({ issue }: { issue: Issue }) {
+  const { viewer } = useViewer()
 
   const draft = useQuery({
     queryKey: ['draft', issue.id, viewer.name],
@@ -77,22 +215,6 @@ function DraftPreview({ issue }: { issue: Issue }) {
     staleTime: Infinity,
     gcTime: Infinity,
   })
-
-  const logged = useMutation({
-    mutationFn: (message: Draft) =>
-      api.actOnIssue(issue.id, {
-        action: 'update',
-        actor: viewer.name,
-        note: `Sent a follow-up to ${message.recipient.name}: ${message.subject}`,
-      }),
-    onSuccess: () => client.invalidateQueries({ predicate: (query) => query.queryKey[0] !== 'draft' }),
-  })
-
-  async function copy(message: Draft) {
-    await navigator.clipboard.writeText(`Subject: ${message.subject}\n\n${message.body}`)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
@@ -103,50 +225,8 @@ function DraftPreview({ issue }: { issue: Issue }) {
         ) : draft.isError ? (
           <ErrorNote error={draft.error} />
         ) : draft.data ? (
-          <>
-            <article className="flex flex-col rounded-xl border border-hair bg-card shadow-lift">
-              <dl className="grid grid-cols-[4rem_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-hair p-4 text-[0.8125rem]">
-                <dt className="text-ink-2">To</dt>
-                <dd>{draft.data.recipient.name}</dd>
-                <dt className="text-ink-2">Address</dt>
-                <dd className={draft.data.recipient.email ? 'break-all' : 'text-accent-ink'}>
-                  {draft.data.recipient.email ?? 'None on file'}
-                </dd>
-                <dt className="text-ink-2">Why them</dt>
-                <dd className="text-ink-2">{draft.data.recipient.role}</dd>
-                <dt className="text-ink-2">Subject</dt>
-                <dd className="font-medium">{draft.data.subject}</dd>
-              </dl>
-              <p className="p-4 whitespace-pre-wrap">{draft.data.body}</p>
-            </article>
-
-            {draft.data.warnings.length > 0 && (
-              <div className="text-[0.8125rem]">
-                <p className="font-medium text-accent-ink">Check before sending</p>
-                <ul className="mt-1 flex list-disc flex-col gap-1 pl-5 text-ink-2">
-                  {draft.data.warnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              <Button variant="primary" onClick={() => copy(draft.data)}>
-                {copied ? <Check {...ICON} /> : <Copy {...ICON} />}
-                {copied ? 'Copied' : 'Copy message'}
-              </Button>
-              <Button disabled={logged.isPending || logged.isSuccess} onClick={() => logged.mutate(draft.data)}>
-                {logged.isSuccess ? 'Logged on the issue' : logged.isPending ? 'Logging' : 'Log that I sent it'}
-              </Button>
-              <Button onClick={() => draft.refetch()}>Draft again</Button>
-            </div>
-            {logged.isError && <p className="text-[0.8125rem] text-neg">{logged.error.message}</p>}
-            <p className="text-xs leading-4 text-muted">
-              Nothing is sent from here. Every figure in the draft is checked against the records for this issue as of the
-              last sync. Copy it into your own email, change what you like, and log it once it has gone
-            </p>
-          </>
+          // Keyed on when it was written, so a new draft replaces any edits to the old one.
+          <Compose key={draft.dataUpdatedAt} issue={issue} message={draft.data} onAgain={() => draft.refetch()} />
         ) : null}
       </div>
     </div>

@@ -213,6 +213,12 @@ export interface Summary {
     invoiced: Money
     sent: Money
     collected: Money
+    /** The contract value split by how far it has got. The parts add up to the whole. */
+    stages: {
+      key: 'collected' | 'sent_not_collected' | 'invoiced_not_sent' | 'earned_not_invoiced' | 'not_yet_earned'
+      amount: Money
+      share_pct: string
+    }[]
   }
   open_issue_count: number
   jobs_with_issues: number
@@ -279,6 +285,14 @@ export interface Coding {
   reasons: string[]
   runner_up: { job_number: string; job_name: string } | null
   looked_at: AskStep[]
+}
+
+/** One of Harborstone's systems, as we last read it. */
+export interface SourceSystem {
+  system: 'crm' | 'project' | 'accounting'
+  tables: number
+  records: number
+  last_read_at: string | null
 }
 
 export interface SourceRecord {
@@ -376,6 +390,7 @@ export const api = {
   issue: (id: number) => request<IssueDetail>(`/issues/${id}`),
   actOnIssue: (id: number, body: IssueUpdate) => post<IssueDetail>(`/issues/${id}/actions`, body),
   people: () => request<Person[]>('/people'),
+  sources: () => request<SourceSystem[]>('/sources'),
 
   issueTypes: () => request<IssueType[]>('/issue-types'),
   updateIssueType: (key: string, body: { enabled?: boolean; tolerance?: string }) =>

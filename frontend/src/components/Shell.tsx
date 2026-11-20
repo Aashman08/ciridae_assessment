@@ -8,6 +8,8 @@ import {
   LayoutDashboard,
   ListChecks,
   MessageCircleQuestion,
+  Moon,
+  Plug,
   Receipt,
   TriangleAlert,
 } from 'lucide-react'
@@ -20,10 +22,9 @@ import { dateTime, longDate } from '../lib/format'
 import { cx } from '../lib/styles'
 import { useLatestSync } from '../lib/sync'
 import { useTheme } from '../lib/theme'
-import type { Theme } from '../lib/theme'
 import { useViewer, VIEWERS } from '../lib/viewer'
 import { AssistantPane } from './AssistantPane'
-import { Button, Segmented } from './ui'
+import { Button, Toggle } from './ui'
 
 interface Section {
   to: string
@@ -32,6 +33,8 @@ interface Section {
   /** Only for people who can change how issues are detected. */
   managesChecks?: boolean
 }
+
+const CONNECTORS: Section = { to: '/connectors', label: 'Connectors', icon: Plug }
 
 const SECTIONS: Section[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard },
@@ -66,11 +69,6 @@ function Mark() {
     </svg>
   )
 }
-
-const THEMES: { value: Theme; label: string }[] = [
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
-]
 
 function Initial({ name }: { name: string }) {
   return (
@@ -192,13 +190,18 @@ function Sidebar() {
         ))}
       </nav>
 
-      <div className="mt-auto flex flex-col gap-4 px-2 pt-3 md:pt-6">
-        <p className="hidden text-xs leading-4 text-muted md:block">
-          This app records what people did. It does not send invoices, approve bills or contact anyone.
-        </p>
-        <div>
-          <Segmented label="Theme" value={theme} options={THEMES} onChange={setTheme} />
-        </div>
+      {/* Settings sit at the bottom, in the same rows as the pages above them. */}
+      <div className="mt-auto flex gap-1 pt-3 md:flex-col md:gap-0.5 md:pt-6">
+        <NavLink to="/connectors" className={({ isActive }) => `${ROW} ${isActive ? ROW_ACTIVE : ''}`}>
+          <Plug {...ICON} className="text-muted" />
+          <span className="truncate">Connectors</span>
+          <span />
+        </NavLink>
+        <label className={`${ROW} cursor-pointer`}>
+          <Moon {...ICON} className="text-muted" />
+          <span className="truncate">Dark mode</span>
+          <Toggle checked={theme === 'dark'} onChange={(dark) => setTheme(dark ? 'dark' : 'light')} label="Dark mode" />
+        </label>
       </div>
     </aside>
   )
@@ -207,7 +210,7 @@ function Sidebar() {
 function Crumb() {
   const { pathname } = useLocation()
   const [, first, second] = pathname.split('/')
-  const section = SECTIONS.find((s) => s.to === `/${first}`) ?? SECTIONS[0]
+  const section = [...SECTIONS, CONNECTORS].find((s) => s.to === `/${first}`) ?? SECTIONS[0]
   const Icon = section.icon
   // An issue's address holds a number that means nothing to a reader. Its name does.
   const issueId = first === 'issues' && second ? Number(second) : null

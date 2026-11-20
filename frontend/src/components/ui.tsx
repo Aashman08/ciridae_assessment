@@ -4,7 +4,6 @@ import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { ApiError } from '../lib/api'
 import type { Order } from '../lib/api'
-import { money } from '../lib/format'
 import { buttonClass, cx } from '../lib/styles'
 import { useRunSync } from '../lib/sync'
 
@@ -181,37 +180,6 @@ export function Facts({ rows }: { rows: [label: string, value: ReactNode, figure
         </div>
       ))}
     </dl>
-  )
-}
-
-interface BarRowProps {
-  label: string
-  amount: number
-  max: number
-  tone?: 'outline' | 'solid' | 'accent'
-}
-
-/** One labelled bar with its dollar figure, drawn to a shared scale. */
-export function BarRow({ label, amount, max, tone = 'solid' }: BarRowProps) {
-  const width = max > 0 ? Math.max(0, (amount / max) * 100) : 0
-  return (
-    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)_5.5rem] items-center gap-3 text-[0.8125rem] text-ink-2 sm:grid-cols-[9rem_minmax(0,1fr)_5.5rem]">
-      <span>{label}</span>
-      <span className="h-2 rounded bg-raised">
-        <span
-          className={cx(
-            'block h-2 rounded',
-            tone === 'outline' && 'ring-[1.5px] ring-muted ring-inset',
-            tone === 'solid' && 'bg-ink-2',
-            tone === 'accent' && 'bg-accent',
-          )}
-          style={{ width: `${width}%` }}
-        />
-      </span>
-      <span className="text-right font-mono text-xs text-ink tabular-nums">
-        {money(amount)}
-      </span>
-    </div>
   )
 }
 
@@ -479,5 +447,35 @@ export function SearchBox({ label, value, onChange }: { label: string; value: st
         className="h-8 w-56 rounded-lg border border-hair bg-card pr-2 pl-8 text-[0.8125rem] placeholder:text-muted"
       />
     </label>
+  )
+}
+
+interface ToggleProps {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  /** What the switch turns on, for anyone who cannot see it. */
+  label: string
+  disabled?: boolean
+}
+
+/** An on/off switch. */
+export function Toggle({ checked, onChange, label, disabled }: ToggleProps) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cx(
+        'inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors duration-150 ease-out',
+        checked ? 'bg-ink' : 'bg-raised ring-1 ring-hair ring-inset',
+      )}
+    >
+      <span
+        className={cx('size-4 rounded-full transition-transform duration-150 ease-out', checked ? 'translate-x-4 bg-card' : 'bg-muted')}
+      />
+    </button>
   )
 }

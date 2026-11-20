@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 import { Shell } from './components/Shell'
 import { Empty } from './components/ui'
 import { Ask } from './pages/Ask'
+import { Connectors } from './pages/Connectors'
 import { IssueDetail } from './pages/IssueDetail'
 import { Issues } from './pages/Issues'
 import { IssueTypes } from './pages/IssueTypes'
@@ -23,6 +24,7 @@ export function App() {
         <Route path="invoices" element={<Lines key="invoices" kind="customer_invoice" />} />
         <Route path="bills" element={<Lines key="bills" kind="vendor_bill" />} />
         <Route path="issue-types" element={<IssueTypes />} />
+        <Route path="connectors" element={<Connectors />} />
         <Route path="*" element={<Empty>There is no page at this address</Empty>} />
       </Route>
     </Routes>

@@ -66,6 +66,29 @@ def margin_pct(revenue: Decimal, cost: Decimal) -> Decimal | None:
     return ((revenue - cost) / revenue * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
 
 
+def contract_stages(contract: Decimal, earned: Decimal, invoiced: Decimal, sent: Decimal, collected: Decimal) -> list[dict]:
+    """Where the contract value sits on its way to cash, as parts that add up to the whole.
+
+    Each part is the money that has reached one stage and not the next. Earned and
+    invoiced can run ahead of each other, so that pair is measured against whichever is larger.
+    """
+    parts = [
+        ("collected", collected),
+        ("sent_not_collected", sent - collected),
+        ("invoiced_not_sent", invoiced - sent),
+        ("earned_not_invoiced", earned - invoiced),
+        ("not_yet_earned", contract - max(earned, invoiced)),
+    ]
+    return [
+        {
+            "key": key,
+            "amount": max(amount, ZERO),
+            "share_pct": (max(amount, ZERO) / contract * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP) if contract > 0 else ZERO,
+        }
+        for key, amount in parts
+    ]
+
+
 def ledger_profit(fin: JobFinancials) -> dict:
     """The one profit figure a list of jobs shows: what finance has booked as earned,
     less what finance has booked as cost. Opening a job offers the other pairs."""
