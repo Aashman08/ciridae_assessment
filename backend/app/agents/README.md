@@ -1,7 +1,9 @@
 # Agents
 
 Every place a model does work. Each is one agent with fixed inputs and a typed reply
-that code checks before it is used. Tests use a scripted stand-in for the model.
+that code checks before it is used. The tests do not call OpenAI: they use a fake model
+that returns answers written in advance, to check how our code handles each one. The
+[evals](../../evals/README.md) test the real model.
 
 | Where | What the model does | What stays fixed |
 |---|---|---|

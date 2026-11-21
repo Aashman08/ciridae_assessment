@@ -119,7 +119,8 @@ cannot do: they read words and they write words.
 | Check writer | Turns a sentence into a check | Code validates the rule before a person sees it |
 
 Each agent has a typed reply. Code checks the reply before the app uses it. A person
-confirms each step. The AI tests use a scripted model, so they need no key.
+confirms each step. The tests do not call the model. A fake model gives answers that
+we wrote, and the tests check that our code handles each answer correctly.
 
 ### 5.1 Results against the real model
 

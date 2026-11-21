@@ -27,7 +27,9 @@ reply before anyone sees it. Details are in [backend/app/agents](backend/app/age
 
 ### How it is tested
 
-- **Tests** (157) use a scripted stand-in for the model, so they need no key.
+- **Tests** (157) do not call OpenAI. They swap the model for a fake one that returns
+  answers we wrote in advance, and check that our code handles each answer correctly.
+  They test our code, not the model's judgement, so they need no key and cost nothing.
 - **Evals** score three agents against answers written by hand, with the real model.
   See [backend/evals](backend/evals/README.md).
 
