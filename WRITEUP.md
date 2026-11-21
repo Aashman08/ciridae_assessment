@@ -1,7 +1,7 @@
 # Harborstone Reconciliation: Write-up
 
-This document tells what we built for Harborstone, for whom, and why. It also tells
-how we made the decisions and how we did the work. It uses the rules of ASD-STE100
+This document tells what I built for Harborstone, for whom, and why. It also tells
+how I made the decisions and how I did the work. It uses the rules of ASD-STE100
 Simplified Technical English: short sentences, active voice, and one word for one
 thing. For each screen, API route and agent, refer to the README in its folder.
 
@@ -11,17 +11,17 @@ Harborstone uses three systems: a CRM, a project system and an accounting system
 The three systems do not agree about a job. People find the differences by hand,
 with exports and spreadsheets.
 
-We built one service that reads the three systems. It joins them into one record
+I built one service that reads the three systems. It joins them into one record
 for each job. It finds where the systems do not agree, and it tells the correct person
 what to do next. AI agents help the person act. Fixed code calculates every figure
 and decides what is wrong.
 
 ## 2. The problem in the data
 
-We read the export before we chose what to build. The data on 28 July 2026 shows
+I read the export before I chose what to build. The data on 28 July 2026 shows
 these facts:
 
-| What we found | Amount |
+| What I found | Amount |
 | --- | --- |
 | Customers owe Harborstone | $1,477,564 |
 | Of that, past its due date | $719,004 |
@@ -40,7 +40,7 @@ next step needs.
 
 ## 3. Who it is for
 
-We designed the app for the three people in the company brief. Each person sees a
+I designed the app for the three people in the company brief. Each person sees a
 different first screen. The "Signed in as" switcher changes between them.
 
 | Person | Decision or work | What the app gives |
@@ -49,13 +49,13 @@ different first screen. The "Signed in as" switcher changes between them.
 | Luis Ortega, VP of Operations | Which jobs need me? Who owns what? | Urgent starts measured from the date of the damage, jobs that stall, spending ahead of schedule, and the work for each owner |
 | Tasha Green, Project Director | What do I do today? | Her list of items, largest first. Each row has a button that starts the next step |
 
-## 4. What we built
+## 4. What I built
 
 ### 4.1 One record for each job
 
 A sync reads the three systems and does four steps:
 
-1. Copy each source row into our database, with a hash of its content.
+1. Copy each source row into the app's database, with a hash of its content.
 2. Join each project to its opportunity, customer, budget and owners. The result is one job.
 3. Calculate the totals for each job: contract, budget, three cost figures, revenue, cash.
 4. Run the checks. Each result becomes an issue with a stable key.
@@ -66,7 +66,7 @@ to the source systems. The connection to Harborstone's database is read-only.
 ### 4.2 No silent choice of cost
 
 The project system and the ledger give different costs for most jobs. Nothing in the
-data links a cost entry to a bill. Thus we do not choose one figure. The job page
+data links a cost entry to a bill. Thus I do not choose one figure. The job page
 shows each revenue figure and each cost figure. The person selects a pair, and the
 app calculates profit for that pair. A warning icon shows when two systems disagree.
 
@@ -96,14 +96,14 @@ than $100,000 still open." The AI agent does these things one time:
 
 1. It gives the check a name, an area and a severity.
 2. It writes a rule over a fixed list of about 80 fields.
-3. Our code validates the rule.
+3. Code validates the rule.
 4. The app shows what the rule finds today, before the person saves it.
 
 After that, the rule runs on each sync as code, like the built-in checks. No model
 runs during a sync. Some things only words can show, for example a customer dispute.
 For those, the AI agent reads the notes and emails. Each result must quote the text.
 
-## 5. Where AI helps, and how we control it
+## 5. Where AI helps, and how I control it
 
 Figures, totals and the built-in checks are fixed code. The same data always gives
 the same result, and you can trace each figure. AI agents do the work that rules
@@ -120,11 +120,11 @@ cannot do: they read words and they write words.
 
 Each agent has a typed reply. Code checks the reply before the app uses it. A person
 confirms each step. The tests do not call the model. A fake model gives answers that
-we wrote, and the tests check that our code handles each answer correctly.
+I wrote, and the tests check that my code handles each answer correctly.
 
 ### 5.1 Results against the real model
 
-We scored three agents against answers that we wrote by hand:
+I scored three agents against answers that I wrote by hand:
 
 | Agent | Result |
 | --- | --- |
@@ -132,13 +132,13 @@ We scored three agents against answers that we wrote by hand:
 | Job review | 51 of 54 decisions correct. It read the one real promise correctly: wait until 31 July |
 | Note reader | 5 of 6 commitments correct. It did not find "weekly photo updates" |
 
-The job review also found a weak point in our own checks. It dismissed "no operations
+The job review also found a weak point in my own checks. It dismissed "no operations
 manager" on a cancelled job and on a closed job. That check must not flag those jobs.
 
 ## 6. Design decisions
 
-- **Our own database.** The joined records, issues and history have no place in the
-  three systems. We keep them in a separate database.
+- **A separate database.** The joined records, issues and history have no place in the
+  three systems. I keep them in a separate database.
 - **The date of the export is the clock.** The app measures "late" against the sync
   date, not today. Otherwise every invoice looks months late.
 - **A job is a won opportunity with a project.** The 10 open and 2 lost opportunities
@@ -159,9 +159,9 @@ manager" on a cancelled job and on a closed job. That check must not flag those 
 | Email | The app does not send email. "Send" opens the draft in the person's own mail app |
 | Sign-in | Not built. The "Signed in as" switcher stands in for it |
 
-## 8. How we did the work
+## 8. How I did the work
 
-We used Claude Code for the work. We did these steps in this order:
+I used Claude Code for the work. I did these steps in this order:
 
 1. Read the brief and the case study.
 2. Profile the export: tables, keys, statuses, and where the systems disagree.
@@ -178,7 +178,7 @@ The backend has four packages: `core`, `sync`, `checks` and `agents`. Three file
 above them: `server.py`, `endpoints.py` and `client.py`. Each route calls one method
 on the client. The client owns the session and the transaction for the request.
 
-## 9. What we would build next
+## 9. What I would build next
 
 To help Harborstone grow 5 times, the next steps are:
 

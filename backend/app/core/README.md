@@ -9,7 +9,7 @@
 | `errors.py`, `exception_handlers.py` | Typed errors, rendered as `{"error": {"type", "message", "request_id"}}` |
 | `middleware.py` | Request IDs and the optional API key check |
 
-Our tables sit in two schemas of `harborstone_recon`. Harborstone's database is a
+The app's tables sit in two schemas of `harborstone_recon`. Harborstone's database is a
 separate one, opened read-only.
 
 | Schema | Tables |

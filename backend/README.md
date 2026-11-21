@@ -16,7 +16,7 @@ Startup applies pending migrations and, if no sync has ever run, runs the first 
 | --- | --- | --- |
 | `app/` | `server.py`, `endpoints.py` (the API) and `client.py` (every operation) | [app/README.md](app/README.md) |
 | `app/core/` | Settings, database, models, API contracts, errors | [app/core/README.md](app/core/README.md) |
-| `app/sync/` | Reading the source systems into our database | [app/sync/README.md](app/sync/README.md) |
+| `app/sync/` | Reading the source systems into the app's database | [app/sync/README.md](app/sync/README.md) |
 | `app/checks/` | What is wrong: built-in checks, checks people add, items | [app/checks/README.md](app/checks/README.md) |
 | `app/agents/` | Every place a model does work | [app/agents/README.md](app/agents/README.md) |
 | `evals/` | Scores for the agents against the real model | [evals/README.md](evals/README.md) |
@@ -29,7 +29,7 @@ Read from `backend/.env`, which `run.sh` copies from `.env.example`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | `postgresql+psycopg:///harborstone_recon` | Our own database. Everything this service writes goes here |
+| `DATABASE_URL` | `postgresql+psycopg:///harborstone_recon` | The app's own database. Everything this service writes goes here |
 | `SOURCE_DATABASE_URL` | `postgresql+psycopg:///harborstone` | Harborstone's export. Opened read-only |
 | `SOURCE_SCHEMA` | `source_company` | The schema that holds the export |
 | `OPENAI_API_KEY` | not set | Turns on the AI features. `run.sh` asks for it once |

@@ -2,7 +2,7 @@
 
 Every place a model does work. Each is one agent with fixed inputs and a typed reply
 that code checks before it is used. The tests do not call OpenAI: they use a fake model
-that returns answers written in advance, to check how our code handles each one. The
+that returns answers written in advance, to check how the code handles each one. The
 [evals](../../evals/README.md) test the real model.
 
 | Where | What the model does | What stays fixed |
@@ -23,22 +23,22 @@ a figure or decides what counts as an issue. This section covers Ask; the table 
 It is built on the OpenAI Agents SDK, in `backend/app/agents/assistant.py`.
 
 - **The model cannot query the database.** It can only choose one of ten
-  tools and fill in that tool's typed inputs. Our code checks the inputs and
+  tools and fill in that tool's typed inputs. The app's code checks the inputs and
   runs the query.
 - **Each tool is an existing operation** on the same client the API uses, so
   an answer's figures are the app's figures.
-- **Scope is enforced in our code.** Someone who sees only their own jobs
+- **Scope is enforced in code.** Someone who sees only their own jobs
   gets only those, whatever the model asks for.
 - **Answers show their working.** Each comes back with the lookups used and
   the jobs, invoices and issues it rests on.
-- **Figures are checked in our code.** Every dollar figure in an answer is
+- **Figures are checked in code.** Every dollar figure in an answer is
   compared with what the tools returned. Any the assistant calculated itself
   (a sum or a difference) is listed separately, and an incomplete figure such
   as "$113,?" is sent back once and then refused.
 - **Read-only.** No tool changes anything.
 - **The answer's layout is fixed too.** The model must reply with a list of
   blocks from a set of four (text, table, figures, and a line or bar chart), checked against a schema
-  before we see it; anything else is refused. The API returns them as a
+  before it is used; anything else is refused. The API returns them as a
   [json-render](https://json-render.dev) spec, and the web app draws that spec
   with its own components, so a table in an answer is the same table as
   everywhere else. A chart is drawn by the app from the numbers in the block;

@@ -28,8 +28,8 @@ reply before anyone sees it. Details are in [backend/app/agents](backend/app/age
 ### How it is tested
 
 - **Tests** (157) do not call OpenAI. They swap the model for a fake one that returns
-  answers we wrote in advance, and check that our code handles each answer correctly.
-  They test our code, not the model's judgement, so they need no key and cost nothing.
+  answers I wrote in advance, and check that my code handles each answer correctly.
+  They test my code, not the model's judgement, so they need no key and cost nothing.
 - **Evals** score three agents against answers written by hand, with the real model.
   See [backend/evals](backend/evals/README.md).
 
@@ -46,11 +46,11 @@ The app was built with Claude Code (Anthropic's Claude) as the coding assistant.
 | What | How AI helped |
 | --- | --- |
 | Understanding the data | Profiled the export: tables, keys, statuses, and where the three systems disagree |
-| Backend and web app | Wrote the code, the migrations and the tests to the structure and rules we set in `AGENTS.md` |
+| Backend and web app | Wrote the code, the migrations and the tests to the structure and rules I set in `AGENTS.md` |
 | Checking the screens | Took screenshots at phone, laptop and wide-screen sizes, in light and dark mode, after each change |
 | Evals | Wrote the eval scripts and ran them against the real model |
 | Documents | Drafted the READMEs and the write-up |
 
-The decisions were ours: which problem to solve, for whom, what each screen shows, where
-AI is allowed to act and where it is not, and what is mocked. We reviewed each screen as
+The decisions were mine: which problem to solve, for whom, what each screen shows, where
+AI is allowed to act and where it is not, and what is mocked. I reviewed each screen as
 each person and sent back what did not help them act.

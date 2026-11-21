@@ -11,7 +11,7 @@
 Step 4, finding issues, is in [../checks](../checks/README.md).
 
 `POST /api/v1/sync-runs` reads from Harborstone's database and writes only
-to ours. It runs four steps in one transaction.
+to the app's own. It runs four steps in one transaction.
 
 1. **Land.** Every row of the 42 exported tables is copied into
    `raw.source_record` as JSON, with its system, table, key and a content
