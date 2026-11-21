@@ -1,0 +1,498 @@
+{
+  "summary": {
+    "items": 54,
+    "right": 51,
+    "wrong": 3,
+    "wrong date": 0,
+    "accuracy": 0.944,
+    "notes_read_correctly": "1 of 1"
+  },
+  "items": [
+    {
+      "job": "BTX00010003",
+      "item": "cost_gap:BTX00010003",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log shows $75,440 while the ledger shows $82,200, a $6,760 cost gap that needs reconciliation."
+    },
+    {
+      "job": "BTX00010003",
+      "item": "invoice_not_sent:INV-2026-0596",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "INV-2026-0596 for $116,700 is still a draft and has not been sent."
+    },
+    {
+      "job": "BTX00030002",
+      "item": "cost_gap:BTX00030002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log records $141,360 while the ledger records $129,700, a difference of $11,660."
+    },
+    {
+      "job": "BTX00030002",
+      "item": "invoice_unpaid:INV-2026-0515",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "Invoice INV-2026-0515 for $178,100 is 26 days past due."
+    },
+    {
+      "job": "BTX00030002",
+      "item": "stalled:BTX00030002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The job is still in progress 16 days past its planned Jul 12 finish, with no work logged for 14 days."
+    },
+    {
+      "job": "BTX00030002",
+      "item": "no_ops_manager:BTX00030002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "No ops manager is assigned to the job."
+    },
+    {
+      "job": "BTX00040001",
+      "item": "late_start:BTX00040001",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The item calls for confirming the start, which is planned for Jul 30."
+    },
+    {
+      "job": "BTX00070002",
+      "item": "cost_gap:BTX00070002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The ops log says $156,060 while the ledger says $130,200, a $25,860 discrepancy."
+    },
+    {
+      "job": "BTX00070002",
+      "item": "invoice_unpaid:INV-2026-0526",
+      "decision": "wait",
+      "until": "2026-08-04",
+      "verdict": "wrong",
+      "first": false,
+      "reason": "Tasha Green's November 19 note says payment goes out Friday, November 20."
+    },
+    {
+      "job": "BTX00140002",
+      "item": "cost_gap:BTX00140002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log says $68,760 while the ledger says $95,500, a $26,740 cost discrepancy."
+    },
+    {
+      "job": "BTX00140002",
+      "item": "no_ops_manager:BTX00140002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "No ops manager is assigned, and Danny Alvarez is listed as the account executive."
+    },
+    {
+      "job": "BTX00140002",
+      "item": "billing_gap:BTX00140002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The job is complete, but invoices total $112,600 against $132,500 of revenue, leaving $19,900 unreconciled."
+    },
+    {
+      "job": "CCO00110002",
+      "item": "no_ops_manager:CCO00110002",
+      "decision": "dismiss",
+      "until": null,
+      "verdict": "wrong",
+      "first": false,
+      "reason": "The job is marked CANCELLED, so assigning an ops manager is not needed."
+    },
+    {
+      "job": "CTX00010001",
+      "item": "late_start:CTX00010001",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The tag says the start is planned for 5 Aug, 13 days after the 23 Jul win, so confirm the start."
+    },
+    {
+      "job": "CTX00020002",
+      "item": "cost_gap:CTX00020002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log says $54,780 while the ledger says $66,100, a $11,320 cost gap."
+    },
+    {
+      "job": "CTX00020002",
+      "item": "invoice_unpaid:INV-2026-0549",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "INV-2026-0549 has $34,504 open and is 2 days past due."
+    },
+    {
+      "job": "CTX00030003",
+      "item": "cost_gap:CTX00030003",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log lists $183,080 while the ledger lists $198,700, a $15,620 difference to reconcile."
+    },
+    {
+      "job": "CTX00030003",
+      "item": "bill_stuck:APX-40766",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The $19,800 bill is tagged 9 days late and posting failed, and its due date was July 19."
+    },
+    {
+      "job": "CTX00030003",
+      "item": "no_ops_manager:CTX00030003",
+      "decision": "dismiss",
+      "until": null,
+      "verdict": "wrong",
+      "first": false,
+      "reason": "The job is marked CLOSED, so assigning an ops manager is no longer needed."
+    },
+    {
+      "job": "CTX00080002",
+      "item": "invoice_unpaid:INV-2026-0502",
+      "decision": "wait",
+      "until": "2026-07-31",
+      "verdict": "right",
+      "first": false,
+      "reason": "Jenna's July 24 note says payment is scheduled on the next check run and to follow up Friday if remittance has not landed."
+    },
+    {
+      "job": "CTX00080002",
+      "item": "invoice_not_sent:INV-2026-0592",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The $108,300 invoice was approved July 22 and is still tagged approved, not sent."
+    },
+    {
+      "job": "CTX00080002",
+      "item": "cost_gap:CTX00080002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log shows $327,600 while the ledger shows $318,500, a $9,100 difference."
+    },
+    {
+      "job": "CTX00080002",
+      "item": "billing_gap:CTX00080002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ledger shows $432,500 of revenue while invoices total $324,800, a $107,700 difference."
+    },
+    {
+      "job": "CTX00080002",
+      "item": "budget_risk:CTX00080002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The tags show 72% of the budget used with only 61% of the project time gone."
+    },
+    {
+      "job": "CTX00130001",
+      "item": "late_start:CTX00130001",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The job was won Jul 23 and is not planned to start until Aug 13, 21 days after the win."
+    },
+    {
+      "job": "CTX00150002",
+      "item": "cost_gap:CTX00150002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "Ops has logged $188,240 against a $174,200 contract, while the ledger has nothing for the job."
+    },
+    {
+      "job": "CTX00150002",
+      "item": "invoice_not_sent:INV-2026-0594",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "INV-2026-0594 for $52,300 is still a draft."
+    },
+    {
+      "job": "CTX00150002",
+      "item": "budget_risk:CTX00150002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The job has spent $188,240 of its $181,000 budget with only 22% of the project time gone."
+    },
+    {
+      "job": "MTX00010002",
+      "item": "cost_gap:MTX00010002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log shows $40,320 while the ledger shows $38,400, a $1,920 discrepancy to reconcile."
+    },
+    {
+      "job": "MTX00010002",
+      "item": "bill_stuck:PD-33218",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "PD-33218 is an unpaid $9,640 bill pending project approval, and the tag says the $145 discount ends 5 Aug."
+    },
+    {
+      "job": "MTX00020003",
+      "item": "cost_gap:MTX00020003",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log says $88,360 while the ledger says $93,700, a $5,340 cost gap."
+    },
+    {
+      "job": "MTX00020003",
+      "item": "bill_stuck:PD-33107",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "PD-33107 is posted but unpaid, due Jun 14, and tagged 44 days late."
+    },
+    {
+      "job": "MTX00040002",
+      "item": "cost_gap:MTX00040002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log shows $50,285 while the ledger shows $56,300."
+    },
+    {
+      "job": "MTX00040002",
+      "item": "bill_stuck:DTL-9871",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "DTL-9871 is unpaid, 32 days late, and tagged Job closed."
+    },
+    {
+      "job": "MTX00050003",
+      "item": "cost_gap:MTX00050003",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The ops log and ledger differ by $7,050, with no note explaining the discrepancy."
+    },
+    {
+      "job": "MTX00050003",
+      "item": "bill_stuck:PD-33305",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "PD-33305 is still a draft, and approval by Aug 7 saves $216."
+    },
+    {
+      "job": "MTX00100002",
+      "item": "invoice_not_sent:INV-2026-0590",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "INV-2026-0590 for $34,500 was approved on July 21 but is still marked approved, not sent."
+    },
+    {
+      "job": "MTX00100002",
+      "item": "cost_gap:MTX00100002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log shows $18,560 while the ledger shows $23,300, a $4,740 discrepancy."
+    },
+    {
+      "job": "MTX00130002",
+      "item": "cost_gap:MTX00130002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The ops log lists $85,440 while the ledger lists $124,600, a $39,160 discrepancy."
+    },
+    {
+      "job": "RAZ00060002",
+      "item": "stalled:RAZ00060002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The last cost or vendor bill was dated Jul 12, and the item is tagged with no work logged for 16 days."
+    },
+    {
+      "job": "RAZ00060002",
+      "item": "no_ops_manager:RAZ00060002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "No ops manager is assigned to the job."
+    },
+    {
+      "job": "RAZ00060002",
+      "item": "cost_gap:RAZ00060002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The ops log says $73,840 while the ledger says $56,800, a $17,040 discrepancy."
+    },
+    {
+      "job": "RTX00010004",
+      "item": "cost_gap:RTX00010004",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log records $410,880 while the ledger records $425,600, a $14,720 difference."
+    },
+    {
+      "job": "RTX00010004",
+      "item": "bill_stuck:ARS-20390",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "ARS-20390 is a $96,400 posted but unpaid bill, 29 days late, and the job is closed."
+    },
+    {
+      "job": "RTX00050002",
+      "item": "invoice_unpaid:INV-2026-0538",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "INV-2026-0538 has $246,300 open and is 14 days past due."
+    },
+    {
+      "job": "RTX00050002",
+      "item": "bill_stuck:ARS-20447",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "ARS-20447 needs project approval, and approving it by Jul 30 saves $967."
+    },
+    {
+      "job": "RTX00080003",
+      "item": "cost_gap:RTX00080003",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log says $68,470 while the ledger says $83,400, a $14,930 difference."
+    },
+    {
+      "job": "RTX00080003",
+      "item": "bill_stuck:CVG-6540",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "CVG-6540 is unpaid and 22 days late, with the job marked closed."
+    },
+    {
+      "job": "XAZ00120002",
+      "item": "cost_gap:XAZ00120002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The ledger has nothing recorded for the $8,900 logged by Ops."
+    },
+    {
+      "job": "XAZ00120002",
+      "item": "no_ops_manager:XAZ00120002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "No ops manager is assigned."
+    },
+    {
+      "job": "XTX00020001",
+      "item": "late_start:XTX00020001",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The start is planned for Aug 18, 26 days after the Jul 23 win, so confirm the start."
+    },
+    {
+      "job": "XTX00090002",
+      "item": "cost_gap:XTX00090002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "The ops log shows $32,370 while the ledger shows $41,400, a $9,030 difference."
+    },
+    {
+      "job": "XTX00090002",
+      "item": "invoice_not_sent:INV-2026-0553",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": true,
+      "reason": "The $57,300 invoice failed to sync and is tagged \u201cFailed to reach accounting.\u201d"
+    },
+    {
+      "job": "XTX00090002",
+      "item": "no_ops_manager:XTX00090002",
+      "decision": "act",
+      "until": null,
+      "verdict": "right",
+      "first": false,
+      "reason": "No ops manager is assigned, and the account executive is Danny Alvarez."
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "summary": {
+    "expected": 6,
+    "right": 5,
+    "wrong date": 0,
+    "missed": 1,
+    "extras": 0
+  },
+  "rows": [
+    {
+      "note": "Moisture readings",
+      "kind": "we_will",
+      "verdict": "right",
+      "who": "Priya Raman",
+      "what": "schedule the rebuild estimate with the tenant",
+      "due_on": "2026-07-31"
+    },
+    {
+      "note": "Dock leveler",
+      "kind": "promised_to_customer",
+      "verdict": "missed"
+    },
+    {
+      "note": "Kitchen hood",
+      "kind": "waiting_on",
+      "verdict": "right",
+      "who": "the health department",
+      "what": "walkthrough",
+      "due_on": null
+    },
+    {
+      "note": "Billing contact",
+      "kind": "payment_promised",
+      "verdict": "right",
+      "who": "the customer",
+      "what": "payment on their next check run",
+      "due_on": null
+    },
+    {
+      "note": "Billing contact",
+      "kind": "we_will",
+      "verdict": "right",
+      "who": "Jenna Okafor",
+      "what": "follow up if remittance hasn't landed",
+      "due_on": "2026-07-31"
+    },
+    {
+      "note": "Left voicemail",
+      "kind": "we_will",
+      "verdict": "right",
+      "who": "Tasha Green",
+      "what": "escalate the overdue balance to the property manager",
+      "due_on": "2026-07-27"
+    }
+  ],
+  "found": [
+    {
+      "note_id": 1,
+      "kind": "we_will",
+      "who": "Priya Raman",
+      "what": "schedule the rebuild estimate with the tenant",
+      "due_on": "2026-07-31"
+    },
+    {
+      "note_id": 2,
+      "kind": "we_will",
+      "who": "Jenna Okafor",
+      "what": "crane mobilization",
+      "due_on": "2026-07-27"
+    },
+    {
+      "note_id": 3,
+      "kind": "waiting_on",
+      "who": "the health department",
+      "what": "walkthrough",
+      "due_on": null
+    },
+    {
+      "note_id": 4,
+      "kind": "payment_promised",
+      "who": "the customer",
+      "what": "payment on their next check run",
+      "due_on": null
+    },
+    {
+      "note_id": 4,
+      "kind": "we_will",
+      "who": "Jenna Okafor",
+      "what": "follow up if remittance hasn't landed",
+      "due_on": "2026-07-31"
+    },
+    {
+      "note_id": 5,
+      "kind": "we_will",
+      "who": "Tasha Green",
+      "what": "escalate the overdue balance to the property manager",
+      "due_on": "2026-07-27"
+    }
+  ]
+}

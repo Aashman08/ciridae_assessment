@@ -170,7 +170,8 @@ async def from_readings(
             Finding(
                 issue_type.key, reading.subject, Decimal(row.open_amount) if on_document else Decimal(0),
                 summary=issue_type.title,
-                detail=f"It says: \u201c{reading.quote}\u201d. {reading.reason}",
+                # The quote's own closing full stop is dropped so the sentence does not end twice.
+                detail=f"It says: \u201c{(reading.quote or '').rstrip('. ')}\u201d. {reading.reason}",
                 next_step="Look into it and say what is behind it.", action_label="Ask about it",
                 owner=row.owner if row is not None else "Finance queue",
                 job_id=row.job_id if row is not None else None,

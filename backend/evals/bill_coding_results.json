@@ -1,0 +1,222 @@
+{
+  "summary": {
+    "bills": 15,
+    "right": 12,
+    "wrong": 1,
+    "unsure": 2,
+    "accuracy_when_it_answered": 0.923,
+    "wrong_and_confident": 0
+  },
+  "bills": [
+    {
+      "bill": "APX-40766",
+      "actual": "CTX00030003",
+      "suggested": "CTX00030003",
+      "decision": "job",
+      "confidence": "high",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The line \u201cExterior scaffold \u2014 conference center\u201d matches the TexStar \u2014 Conference Center Storm Repairs job.",
+        "The bill is dated 2026-06-19, the job\u2019s close date.",
+        "Apex\u2019s prior bill to Heritage Grove is weaker evidence and does not outweigh the site match."
+      ]
+    },
+    {
+      "bill": "APX-40912",
+      "actual": "BTX00070002",
+      "suggested": "BTX00070002",
+      "decision": "job",
+      "confidence": "medium",
+      "verdict": "right",
+      "lookups": 9,
+      "reasons": [
+        "\u201cCorridor scaffold erection\u201d fits the active Memory Care Wing build-back work, including recent finish work.",
+        "The bill date, 2026-07-22, falls while this job was in progress.",
+        "The hotel guest-floor restoration is a closer alternative, but it was completed on 2026-07-19."
+      ]
+    },
+    {
+      "bill": "ARS-20390",
+      "actual": "RTX00010004",
+      "suggested": "RTX00010004",
+      "decision": "job",
+      "confidence": "medium",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The TPO membrane and cover-board materials match this job\u2019s reroof scope.",
+        "The job logged TPO membrane and insulation costs on the bill date, May 30, while it was active.",
+        "RTX00050002 is a weaker alternative: it is a roofing job with prior Alliance bills, but it did not start until June 21."
+      ]
+    },
+    {
+      "bill": "ARS-20447",
+      "actual": "RTX00050002",
+      "suggested": "RTX00050002",
+      "decision": "job",
+      "confidence": "high",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The email subject names \u201cNorthgate ISD Admin Reroof,\u201d matching the Northgate ISD \u2014 Admin Building Reroof job.",
+        "The modified bitumen membrane and insulation match materials logged for that roofing job.",
+        "The bill date falls while the job is in progress."
+      ]
+    },
+    {
+      "bill": "BBE-7702",
+      "actual": "BTX00070002",
+      "suggested": "BTX00070002",
+      "decision": "job",
+      "confidence": "high",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The line \u201cDuct cleaning \u2014 memory care wing\u201d matches the Heritage Grove \u2014 Memory Care Wing job.",
+        "That job logged a duct cleaning subcontract and was in progress on the bill date.",
+        "No evidence contradicts the match."
+      ]
+    },
+    {
+      "bill": "CVG-6540",
+      "actual": "RTX00080003",
+      "suggested": "RTX00080003",
+      "decision": "job",
+      "confidence": "high",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The bill\u2019s \u201cSkylight units & curbs x22\u201d line matches Redbird \u2014 Building B Skylight Package.",
+        "That job logged a \u201cSkylight units & curbs\u201d cost on 2026-05-30 and was active on the bill date.",
+        "The bill date, 2026-06-06, falls just before the job\u2019s 2026-06-09 completion."
+      ]
+    },
+    {
+      "bill": "CVG-6633",
+      "actual": "RAZ00060002",
+      "suggested": "RAZ00060002",
+      "decision": "job",
+      "confidence": "medium",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The bill\u2019s skylight glazing units match the skylight order logged to Pinnacle \u2014 Tempe Facility Hail Repairs on 2026-07-12.",
+        "The bill date, 2026-07-11, falls while that roofing job was in progress.",
+        "Redbird \u2014 Building B Skylight Package is a close alternative because ClearView previously billed it for skylights, but it was closed before this bill date."
+      ]
+    },
+    {
+      "bill": "DTL-9871",
+      "actual": "MTX00040002",
+      "suggested": "MTX00040002",
+      "decision": "job",
+      "confidence": "high",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The bill\u2019s \u201cMold clearance sampling & lab\u201d line matches the job\u2019s Imaging Suite Mold Remediation scope.",
+        "The job logged \u201cClearance testing\u201d on the bill date, 2026-05-27.",
+        "The job remained active until 2026-05-30."
+      ]
+    },
+    {
+      "bill": "HCE-30281",
+      "actual": "BTX00030002",
+      "suggested": "BTX00030002",
+      "decision": "job",
+      "confidence": "high",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The \u201cBallroom lighting rough-in\u201d line matches the TexStar \u2014 Ballroom Water Intrusion job\u2019s named ballroom scope.",
+        "The bill date, 2026-07-09, falls while the job is in progress.",
+        "No vendor history or existing job costs contradict this match."
+      ]
+    },
+    {
+      "bill": "LSR-88412",
+      "actual": "CTX00080002",
+      "suggested": "MTX00130002",
+      "decision": "job",
+      "confidence": "medium",
+      "verdict": "wrong",
+      "lookups": 7,
+      "reasons": [
+        "The bill is for scissor lift and telehandler rentals, matching this job\u2019s logged equipment-rental costs.",
+        "Lone Star Equipment Rental billed this active job the day before for generator rental.",
+        "MTX00100002 is a runner-up: it is also active and has equipment-rental costs, but no prior bill from this vendor is listed there."
+      ]
+    },
+    {
+      "bill": "LSR-88467",
+      "actual": "MTX00130002",
+      "suggested": "MTX00130002",
+      "decision": "job",
+      "confidence": "high",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The email subject names Pier 12, matching Gulf Coast \u2014 Pier 12 Flood Mitigation.",
+        "The bill\u2019s generator rental and fuel match equipment rental and fuel logged on that active mitigation job.",
+        "The bill date, 2026-07-17, falls during the job\u2019s active period."
+      ]
+    },
+    {
+      "bill": "PD-33107",
+      "actual": "MTX00020003",
+      "suggested": null,
+      "decision": "unsure",
+      "confidence": "low",
+      "verdict": "unsure",
+      "lookups": 6,
+      "reasons": [
+        "Air scrubber and hydroxyl generator rentals fit the mitigation work on both candidate jobs.",
+        "MTX00020003 logged equipment and scrubbers, but its work was completed on the bill date, 2026-05-15.",
+        "MTX00040002 logged air scrubbers during mold remediation and was still active on the bill date."
+      ]
+    },
+    {
+      "bill": "PD-33218",
+      "actual": "MTX00010002",
+      "suggested": null,
+      "decision": "unsure",
+      "confidence": "low",
+      "verdict": "unsure",
+      "lookups": 6,
+      "reasons": [
+        "The air mover and LGR rentals fit active mitigation work, but the bill names no site or scope.",
+        "MTX00100002 has a dehumidifier-fleet cost entry dated 2026-07-19, close to this bill\u2019s date.",
+        "MTX00010002 also has recent drying-equipment rental costs and remains a plausible match."
+      ]
+    },
+    {
+      "bill": "PD-33305",
+      "actual": "MTX00050003",
+      "suggested": "MTX00050003",
+      "decision": "job",
+      "confidence": "medium",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The email subject names Northgate drying equipment, matching Northgate ISD \u2014 Elementary Flood Response.",
+        "The air movers and desiccant dehumidifier fit the job\u2019s logged drying-equipment costs.",
+        "The job was closed five days before the bill date, so the timing is a concern."
+      ]
+    },
+    {
+      "bill": "RBC-1156",
+      "actual": "CTX00080002",
+      "suggested": "CTX00080002",
+      "decision": "job",
+      "confidence": "high",
+      "verdict": "right",
+      "lookups": 6,
+      "reasons": [
+        "The dock apron concrete replacement and joint-sealing lines match the Redbird \u2014 Building A Dock Rebuild scope.",
+        "The job was active on the bill date, and its logged costs include concrete and masonry work.",
+        "The other similar-sounding paving job had not yet been won or started when this bill was dated."
+      ]
+    }
+  ]
+}
