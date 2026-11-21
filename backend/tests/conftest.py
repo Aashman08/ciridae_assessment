@@ -21,7 +21,7 @@ os.environ.pop("API_KEY", None)
 # Tests never use a real model key, even when backend/.env has one. An empty
 # value here overrides the file, so no test can reach the network or spend money.
 os.environ["OPENAI_API_KEY"] = ""
-os.environ["ASK_MODEL"] = ""
+os.environ["MODEL"] = ""
 # Tests start their own syncs. A scheduled one would change the data under them.
 os.environ["SYNC_EVERY_MINUTES"] = "0"
 

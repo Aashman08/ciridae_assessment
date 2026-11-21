@@ -64,7 +64,7 @@ Put an OpenAI key in `backend/.env`:
 
 ```bash
 OPENAI_API_KEY=sk-...
-ASK_MODEL=            # optional; empty uses the OpenAI Agents SDK default
+MODEL=                # optional; empty uses the OpenAI Agents SDK default
 ```
 
 Without a key, everything except the AI works, and each AI feature says it is not set up.
@@ -75,7 +75,7 @@ Without a key, everything except the AI works, and each AI feature says it is no
 | `SOURCE_DATABASE_URL` | `postgresql+psycopg:///harborstone` | Harborstone's export. Opened read-only |
 | `SOURCE_SCHEMA` | `source_company` | The schema that holds the export |
 | `OPENAI_API_KEY` | not set | Turns on the AI features |
-| `ASK_MODEL` | not set | The model every agent uses |
+| `MODEL` | not set | The model every agent uses |
 | `SYNC_EVERY_MINUTES` | 60 | How often a sync runs. 0 turns the schedule off |
 | `API_KEY` | not set | When set, every `/api/v1` request must send it as `X-API-Key` |
 

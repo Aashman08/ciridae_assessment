@@ -445,7 +445,7 @@ def is_configured() -> bool:
 def build_model() -> str | Model | None:
     """The model to run. None means the SDK's own default."""
     set_default_openai_key(database.settings.openai_api_key, use_for_tracing=False)
-    return database.settings.ask_model or None
+    return database.settings.model or None
 
 
 def _cited(context: AskContext, answer: str) -> list[AskSource]:
@@ -543,7 +543,7 @@ async def answer(client: Any, request: AskRequest, as_of: date, history: list[As
     usage = result.context_wrapper.usage
     logger.info(
         "Ask used model=%s requests=%s input_tokens=%s output_tokens=%s lookups=%s",
-        database.settings.ask_model or "default", usage.requests, usage.input_tokens, usage.output_tokens, len(context.steps),
+        database.settings.model or "default", usage.requests, usage.input_tokens, usage.output_tokens, len(context.steps),
     )
 
     return AskAnswer(
