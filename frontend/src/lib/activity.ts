@@ -4,17 +4,17 @@ import type { Tone } from './tones'
 /** What happened, in a word or two. */
 export const KINDS: Record<string, string> = {
   note: 'Note',
-  opened: 'Found',
+  opened: 'Found by a sync',
   assigned: 'Assigned',
-  follow_up: 'Follow-up set',
-  commented: 'Update logged',
-  suggested: 'Suggestion',
+  follow_up: 'Set a follow-up date',
+  commented: 'Logged an update',
+  suggested: 'Suggested by the assistant',
   resolved: 'Resolved',
-  dismissed: 'Dismissed',
+  dismissed: 'Dismissed as expected',
   reopened: 'Reopened',
-  cleared: 'Cleared',
-  setting_changed: 'Check changed',
-  commitment_done: 'Commitment done',
+  cleared: 'Cleared by a sync',
+  setting_changed: 'Changed a check',
+  commitment_done: 'Marked a commitment done',
 }
 
 /** What an entry is, in a word or two. A note says which system it was written in. */

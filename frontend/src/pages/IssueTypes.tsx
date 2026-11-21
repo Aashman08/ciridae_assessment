@@ -7,7 +7,6 @@ import { Button, Card, Loaded, PageHead, Toggle } from '../components/ui'
 import { api } from '../lib/api'
 import type { IssueType } from '../lib/api'
 import { money } from '../lib/format'
-import { useRunSync } from '../lib/sync'
 import { useViewer } from '../lib/viewer'
 
 /** A tolerance is stored as a ratio (0.02), as days (14) or as dollars (1). Show it the way people say it. */
@@ -96,7 +95,6 @@ function Switch({ type }: { type: IssueType }) {
 export function IssueTypes() {
   const client = useQueryClient()
   const types = useQuery({ queryKey: ['issue-types'], queryFn: api.issueTypes })
-  const sync = useRunSync()
   const [adding, setAdding] = useState(false)
   const reread = useMutation({
     mutationFn: api.runReadingChecks,
@@ -119,10 +117,6 @@ export function IssueTypes() {
               {reread.isPending ? 'Reading notes' : 'Read new notes'}
             </Button>
           )}
-          {/* Syncs run on a schedule. This is for seeing the effect of a change straight away. */}
-          <Button disabled={sync.isPending} onClick={() => sync.mutate()}>
-            {sync.isPending ? 'Syncing' : 'Sync now'}
-          </Button>
           {!adding && (
             <Button variant="primary" onClick={() => setAdding(true)}>
               Add a check

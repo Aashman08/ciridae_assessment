@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import TypeVar
 
 from sqlalchemy import Date, Integer, String, and_, case, cast, delete, exists, func, literal, null, or_, select, text, union_all
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
@@ -77,6 +78,7 @@ from app.models import (
 )
 from app.normalize import normalize, person_name
 from app.schemas import (
+    ActivityChange,
     ActivityEntry,
     ActivityFilters,
     CheckCreate,
@@ -218,6 +220,36 @@ def commitment_state(as_of: date):
         (Commitment.due_on <= as_of + timedelta(days=7), "due_soon"),
         else_="open",
     )
+
+
+def audit_action(kind: str, by: str, text: str | None, source: str, changes: list | None) -> str:
+    """What an entry in the audit log did, as a short verb phrase."""
+    text = text or ""
+    if kind == "note":
+        return "Wrote a project note" if source == "project" else "Wrote a note in accounting"
+    if kind == "setting_changed":
+        for start, said in (
+            ("Added this check", "Added a check"), ("Switched on", "Switched a check on"),
+            ("Switched off", "Switched a check off"), ("Tolerance changed", "Changed tolerance"),
+        ):
+            if text.startswith(start):
+                return said
+        return "Changed a check"
+    if kind == "suggested":
+        if text.startswith("Suggested job"):
+            return "Suggested a job"
+        if text.startswith("Suggested this is not a job cost"):
+            return "Suggested no job"
+        return "Could not suggest a job"
+    if kind == "follow_up":
+        return "Removed the follow-up date" if text.startswith("Follow-up date removed") else "Set a follow-up date"
+    if kind == "reopened" and by == "system":
+        return "Reopened by a sync"
+    return {
+        "opened": "Found by a sync", "cleared": "Cleared by a sync", "assigned": "Assigned",
+        "commented": "Logged an update", "resolved": "Resolved", "dismissed": "Dismissed as expected",
+        "reopened": "Reopened", "commitment_done": "Marked a commitment done",
+    }.get(kind, kind.replace("_", " ").capitalize())
 
 
 def _person(email: str | None) -> str:
@@ -670,7 +702,10 @@ class ReconClient:
             created_by=payload.actor,
         )
         self.db.add(issue_type)
-        self.db.add(SettingChange(type_key=key, actor=payload.actor, summary=f"Added this check: {description}"))
+        self.db.add(SettingChange(
+            type_key=key, actor=payload.actor, summary=f"Added this check: {description}",
+            changes=[{"field": "Check", "before": None, "after": "on"}],
+        ))
         await self.db.flush()
         if payload.approach == "reading":
             await self._read_for(issue_type)
@@ -715,10 +750,13 @@ class ReconClient:
         issue_type = await self.db.get(IssueType, key)
         if issue_type is None:
             raise IssueTypeNotFoundError(key)
-        changes = []
+        changes: list[tuple[str, dict]] = []
         if payload.enabled is not None and payload.enabled != issue_type.enabled:
+            changes.append((
+                "Switched on" if payload.enabled else "Switched off",
+                {"field": "Check", "before": "on" if issue_type.enabled else "off", "after": "on" if payload.enabled else "off"},
+            ))
             issue_type.enabled = payload.enabled
-            changes.append("Switched on" if payload.enabled else "Switched off")
         if payload.tolerance is not None:
             if issue_type.tolerance_unit is None:
                 raise InvalidRequestError(f"'{issue_type.title}' has no tolerance to set.")
@@ -727,11 +765,12 @@ class ReconClient:
             if payload.tolerance != issue_type.tolerance:
                 unit = f" {issue_type.tolerance_unit}" if issue_type.tolerance_unit == "days" else ""
                 before = format(issue_type.tolerance.normalize(), "f") if issue_type.tolerance is not None else "none"
-                changes.append(f"Tolerance changed from {before}{unit} to {format(payload.tolerance.normalize(), 'f')}{unit}")
+                after = f"{format(payload.tolerance.normalize(), 'f')}{unit}"
+                changes.append((f"Tolerance changed from {before}{unit} to {after}", {"field": "Tolerance", "before": f"{before}{unit}", "after": after}))
                 issue_type.tolerance = payload.tolerance
         # Every change to what a check looks for goes in the activity log, with who made it.
-        for summary in changes:
-            self.db.add(SettingChange(type_key=key, actor=payload.actor, summary=summary))
+        for summary, change in changes:
+            self.db.add(SettingChange(type_key=key, actor=payload.actor, summary=summary, changes=[change]))
         await self.db.commit()
         found = await self._found_by_type(key)
         return issue_type_response(issue_type, *found.get(key, (0, ZERO)))
@@ -861,12 +900,12 @@ class ReconClient:
             Note.written_by.label("by"), Note.body.label("text"), null().cast(String).label("about"),
             Note.job_id.label("job_id"), Note.document.label("document"),
             # Which table and which row, so entries made in the same instant still come in a fixed order.
-            literal(1, Integer).label("rank"), Note.id.label("ref"),
+            literal(1, Integer).label("rank"), Note.id.label("ref"), null().cast(JSONB).label("changes"),
         )
         events = (
             select(
                 IssueEvent.created_at, literal("app", String), IssueEvent.kind, IssueEvent.actor, IssueEvent.note,
-                IssueType.title, Issue.job_id, Issue.document, literal(2, Integer), IssueEvent.id,
+                IssueType.title, Issue.job_id, Issue.document, literal(2, Integer), IssueEvent.id, IssueEvent.changes,
             )
             .join(Issue, Issue.id == IssueEvent.issue_id)
             .join(IssueType, IssueType.key == Issue.type_key)
@@ -874,11 +913,13 @@ class ReconClient:
         settings = select(
             SettingChange.created_at, literal("app", String), literal("setting_changed", String), SettingChange.actor,
             SettingChange.summary, IssueType.title, null().cast(Integer), null().cast(String), literal(3, Integer), SettingChange.id,
+            SettingChange.changes,
         ).join(IssueType, IssueType.key == SettingChange.type_key)
         done = (
             select(
                 Commitment.done_at, literal("app", String), literal("commitment_done", String), Commitment.done_by,
                 Commitment.what, null().cast(String), Note.job_id, Note.document, literal(4, Integer), Commitment.id,
+                null().cast(JSONB),
             )
             .join(Note, Note.id == Commitment.note_id)
             .where(Commitment.done_at.is_not(None))
@@ -908,8 +949,24 @@ class ReconClient:
             .offset(filters.offset)
             .limit(filters.limit)
         )
+        rows = rows.all()
+        # The invoice or bill each entry is about, so the audit log can open its preview.
+        documents = {
+            number: (line_id, kind)
+            for line_id, number, kind in await self.db.execute(
+                select(MoneyLine.id, MoneyLine.doc_number, MoneyLine.kind).where(
+                    MoneyLine.kind.in_((INVOICE, BILL)), MoneyLine.doc_number.in_({r.document for r in rows if r.document})
+                )
+            )
+        }
+        tables = {1: "note", 2: "event", 3: "setting", 4: "commitment"}
         entries = [
             ActivityEntry(
+                ref=f"{tables[row.rank]}:{row.ref}", action=audit_action(row.kind, row.by, row.text, row.source, row.changes),
+                record=row.document or row.job_number or row.about,
+                changes=[ActivityChange(**c) for c in (row.changes or [])],
+                document_line_id=documents.get(row.document, (None, None))[0],
+                document_kind=documents.get(row.document, (None, None))[1],
                 at=row.at, source=row.source, kind=row.kind, by=row.by, text=row.text, about=row.about,
                 job_number=row.job_number, job_name=row.name, document=row.document,
             )

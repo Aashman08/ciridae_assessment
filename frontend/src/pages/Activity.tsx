@@ -1,12 +1,55 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { ActivityTable } from '../components/ActivityTable'
-import { Card, Loaded, PageHead, Pager, Select, Toggle } from '../components/ui'
+import { useAssistant } from '../lib/assistant'
+import type { ActivityEntry } from '../lib/api'
+import { dateTime } from '../lib/format'
+import { who } from '../lib/activity'
+import { Card, Empty, Loaded, PageHead, Pager, Select, Toggle } from '../components/ui'
 import { KINDS } from '../lib/activity'
 import { api } from '../lib/api'
 import { useViewer } from '../lib/viewer'
 
 const PAGE_SIZE = 50
+
+/**
+ * The log itself: who did what, to what, and when, one line each. Everything else about
+ * an entry (what it changed, the note in full) opens in the side pane.
+ */
+function AuditTable({ entries, empty }: { entries: ActivityEntry[]; empty: string }) {
+  const { view, show } = useAssistant()
+  const open = view?.kind === 'audit' ? view.entry.ref : null
+  if (entries.length === 0) return <Empty>{empty}</Empty>
+  return (
+    <div className="min-w-0 overflow-x-auto">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Who</th>
+            <th>Action</th>
+            <th>Record</th>
+            <th className="max-md:hidden">Job</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry) => (
+            <tr
+              key={entry.ref}
+              className={`clickable ${open === entry.ref ? 'bg-brand-soft/50' : ''}`}
+              onClick={() => show({ kind: 'audit', entry })}
+            >
+              <td className="text-ink-2">{dateTime(entry.at)}</td>
+              <td>{who(entry.by)}</td>
+              <td className="font-medium">{entry.action}</td>
+              <td className={entry.document || entry.job_number === entry.record ? 'font-mono text-[0.8125rem]' : ''}>{entry.record ?? ''}</td>
+              <td className="max-w-[18rem] truncate text-ink-2 max-md:hidden">{entry.job_name ?? ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 /**
  * The audit log: everything anyone did in this app, newest first, and nothing else.
@@ -61,7 +104,7 @@ export function Activity() {
             className="w-48"
           />
           <Select
-            label="What"
+            label="Action"
             value={kind}
             onChange={(value) => update({ kind: value, offset: 0 })}
             all="Anything"
@@ -89,9 +132,8 @@ export function Activity() {
         <Loaded query={log}>
           {(page) => (
             <>
-              <ActivityTable
+              <AuditTable
                 entries={page.data}
-                showJob
                 empty={person || kind || job ? 'Nothing matches these filters' : 'Nobody has done anything yet'}
               />
               <Pager offset={offset} limit={PAGE_SIZE} total={page.total} onChange={(value) => update({ offset: value })} />

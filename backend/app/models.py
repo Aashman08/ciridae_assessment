@@ -323,6 +323,8 @@ class IssueEvent(Base):
     kind: Mapped[str] = mapped_column(String(20))
     actor: Mapped[str] = mapped_column(String(120), default="system")
     note: Mapped[str | None] = mapped_column(Text)
+    # What the action changed, as [{"field", "before", "after"}], for the audit log.
+    changes: Mapped[list | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     issue: Mapped[Issue] = relationship(back_populates="events", lazy="raise")
@@ -422,6 +424,8 @@ class SettingChange(Base):
     type_key: Mapped[str] = mapped_column(ForeignKey(f"{RECON}.issue_type.key"), index=True)
     actor: Mapped[str] = mapped_column(String(120))
     summary: Mapped[str] = mapped_column(String(200))
+    # What changed, as [{"field", "before", "after"}], for the audit log.
+    changes: Mapped[list | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 

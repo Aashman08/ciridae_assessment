@@ -91,3 +91,29 @@ async def test_people_only_leaves_out_what_syncs_did(api):
     people = await activity(api, job="CTX00080002", people_only="true", limit=500)
     assert people["data"] and all(e["by"] != "system" for e in people["data"])
     assert people["total"] == sum(e["by"] != "system" for e in everything["data"])
+
+
+async def test_the_audit_log_names_each_action_and_what_it_changed(api):
+    groups = (await api.get(f"{API}/items")).json()["groups"]
+    item = next(i for g in groups for i in g["items"] if i["key"] == "invoice_unpaid:INV-2026-0538")
+    before = item["owner"]
+    response = await api.post(f"{API}/items/{item['key']}/actions", json={
+        "actor": "Rachel Kim", "action": "update", "assignee": "Ray Delgado", "follow_up_on": "2026-08-04",
+    })
+    assert response.status_code == 200, response.text
+
+    log = (await activity(api, person="Rachel Kim", job="RTX00050002"))["data"]
+    assigned = next(e for e in log if e["kind"] == "assigned")
+    assert (assigned["action"], assigned["record"]) == ("Assigned", "INV-2026-0538")
+    assert {"field": "Owner", "before": before, "after": "Ray Delgado"} in assigned["changes"]
+    # It is about an invoice, so the log can open the invoice's preview.
+    assert assigned["document_kind"] == "customer_invoice" and assigned["document_line_id"]
+    dated = next(e for e in log if e["kind"] == "follow_up")
+    assert dated["action"] == "Set a follow-up date"
+    assert dated["changes"] == [{"field": "Follow up on", "before": None, "after": "4 Aug 2026"}]
+
+    await api.patch(f"{API}/issue-types/past_finish", json={"enabled": False, "actor": "Luis Ortega"})
+    switched = (await activity(api, kind="setting_changed", person="Luis Ortega"))["data"][0]
+    assert (switched["action"], switched["record"]) == ("Switched a check off", "Past planned finish")
+    assert switched["changes"] == [{"field": "Check", "before": "on", "after": "off"}]
+    await api.patch(f"{API}/issue-types/past_finish", json={"enabled": True, "actor": "Luis Ortega"})

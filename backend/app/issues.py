@@ -695,6 +695,15 @@ async def find_issues(db: AsyncSession, run: SyncRun) -> dict:
     return await record_findings(db, run, await detect(db, run))
 
 
+def _shown(value: object) -> str | None:
+    """A before or after value as the audit log shows it."""
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return f"{value.day} {value:%b %Y}"
+    return str(value)
+
+
 async def apply_action(
     db: AsyncSession,
     issue: Issue,
@@ -707,9 +716,12 @@ async def apply_action(
 ) -> None:
     """The only way a person changes an issue. Every action leaves an event."""
 
-    def log(kind: str, text: str | None) -> None:
-        db.add(IssueEvent(issue_id=issue.id, kind=kind, actor=actor, note=text))
+    def log(kind: str, text: str | None, *changes: tuple[str, object, object]) -> None:
+        """Record the action, with what it changed from and to, for the audit log."""
+        changed = [{"field": f, "before": _shown(b), "after": _shown(a)} for f, b, a in changes] or None
+        db.add(IssueEvent(issue_id=issue.id, kind=kind, actor=actor, note=text, changes=changed))
 
+    status = issue.status
     if action == "update":
         # What the web app sends: any of a note, a new owner and a follow-up date, saved together.
         changes_owner = bool(assignee) and assignee != issue.owner
@@ -719,14 +731,14 @@ async def apply_action(
         if issue.status in ("resolved", "cleared"):
             raise InvalidStateError(f"A {issue.status} issue cannot be updated. Reopen it first.")
         if changes_owner:
-            log("assigned", f"Assigned to {assignee}, was {issue.owner}")
+            log("assigned", f"Assigned to {assignee}, was {issue.owner}", ("Owner", issue.owner, assignee), ("State", status, "assigned"))
             issue.owner, issue.status = assignee, "assigned"
         if clear_follow_up:
+            log("follow_up", "Follow-up date removed", ("Follow up on", issue.follow_up_on, None))
             issue.follow_up_on = None
-            log("follow_up", "Follow-up date removed")
         elif changes_date:
+            log("follow_up", f"Follow up on {follow_up_on.day} {follow_up_on:%B %Y}", ("Follow up on", issue.follow_up_on, follow_up_on))
             issue.follow_up_on = follow_up_on
-            log("follow_up", f"Follow up on {follow_up_on.day} {follow_up_on:%B %Y}")
         if note:
             log("commented", note)
     elif action == "assign":
@@ -734,8 +746,8 @@ async def apply_action(
             raise InvalidRequestError("An assignee is required to assign an issue.")
         if issue.status in ("resolved", "cleared"):
             raise InvalidStateError(f"A {issue.status} issue cannot be assigned. Reopen it first.")
+        log("assigned", note or f"Assigned to {assignee}", ("Owner", issue.owner, assignee), ("State", status, "assigned"))
         issue.owner, issue.status = assignee, "assigned"
-        log("assigned", note or f"Assigned to {assignee}")
     elif action == "comment":
         if not note:
             raise InvalidRequestError("A comment needs a note.")
@@ -745,20 +757,20 @@ async def apply_action(
             raise InvalidRequestError("Resolving an issue needs a note saying what was done.")
         if issue.status in ("resolved", "cleared"):
             raise InvalidStateError(f"The issue is already {issue.status}.")
+        log("resolved", note, ("State", status, "resolved"))
         issue.status, issue.resolution_note, issue.follow_up_on = "resolved", note, None
-        log("resolved", note)
     elif action == "dismiss":
         if not note:
             raise InvalidRequestError("Dismissing needs a note saying why this is expected.")
         if issue.status in ("resolved", "cleared"):
             raise InvalidStateError(f"The issue is already {issue.status}.")
+        log("dismissed", note, ("State", status, "dismissed as expected"))
         issue.status, issue.resolution_note, issue.follow_up_on, issue.dismissed = "resolved", f"Expected: {note}", None, True
-        log("dismissed", note)
     elif action == "reopen":
         if issue.status not in ("resolved", "cleared"):
             raise InvalidStateError("Only a resolved or cleared issue can be reopened.")
+        log("reopened", note, ("State", "dismissed as expected" if issue.dismissed else status, "open"))
         issue.status, issue.resolution_note, issue.dismissed = "open", None, False
-        log("reopened", note)
     else:
         raise InvalidRequestError(f"Unknown action '{action}'.")
     await db.flush()

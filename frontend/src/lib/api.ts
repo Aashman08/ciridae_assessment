@@ -175,6 +175,17 @@ export type ActivitySource = 'project' | 'accounting' | 'app'
 
 /** One note or one action, newest first in any list of them. */
 export interface ActivityEntry {
+  /** A stable id for the entry, such as event:42. */
+  ref: string
+  /** What was done, as a short verb phrase, such as Resolved or Changed tolerance. */
+  action: string
+  /** What it was done to: an invoice or bill number, a job number, or a check's name. */
+  record: string | null
+  /** What the action changed, from and to. */
+  changes: { field: string; before: string | null; after: string | null }[]
+  /** The invoice or bill it concerns, for opening its preview. */
+  document_line_id: number | null
+  document_kind: 'customer_invoice' | 'vendor_bill' | null
   at: string
   source: ActivitySource
   /** note, what happened to an issue (opened, resolved, dismissed…), or setting_changed */

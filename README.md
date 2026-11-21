@@ -112,8 +112,8 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 | Issue | What is wrong, what to do, the records behind it (an invoice or bill opens its preview in the side pane), plus its history |
 | Customer invoices, Vendor bills | Every invoice and bill across jobs |
 | Connectors | The three source systems with how much of each was read and when, and the email account a follow-up is sent with |
-| Audit log | Every action, read-only: everything anyone did in this app (issues found, updated, resolved, dismissed, checks changed, commitments marked done), newest first, filterable by who, what and job. What syncs did is hidden until switched on. Notes from the source systems are not here; they are on each job's page |
-| Checks (under Settings) | What every sync looks for. Seventeen are built in. **Add a check** takes one description in plain words; the assistant names the check, works out what it looks at, its area and severity, and turns it into a rule over the records (which then runs on every sync as code, with no model) or, when only notes can show it, a reading check. **Try it** shows what it would flag today before it is saved. Every check has an on/off switch, and any with a tolerance can be tuned; **Sync now** applies a change straight away |
+| Audit log | Every action anyone took in this app, newest first: when, who, the action (Resolved, Assigned, Changed tolerance, Suggested a job…), the record it was done to, and the job. Filter by who, action and job; what syncs did is hidden until switched on. Click an entry to see it in full in the side pane: exactly when, what it changed from and to, the note or reason, and links to the job and the invoice or bill. Notes from the source systems are not here; they are on each job's page |
+| Checks (under Settings) | What every sync looks for. Seventeen are built in. **Add a check** takes one description in plain words; the assistant names the check, works out what it looks at, its area and severity, and turns it into a rule over the records (which then runs on every sync as code, with no model) or, when only notes can show it, a reading check. **Try it** shows what it would flag today before it is saved. Every check has an on/off switch, and any with a tolerance can be tuned. **Sync now** in the top bar applies a change straight away |
 
 | Folder | Holds |
 | --- | --- |
@@ -188,7 +188,7 @@ such as `"246300.00"`. Errors always look like
 | GET | `/issue-types` | The checks, their settings and what each has found |
 | PATCH | `/issue-types/{key}` | Switch a check off or change its tolerance. Send `actor`; each change is kept in the activity log |
 | GET | `/source-records/{id}` | The untouched source row behind any number |
-| GET | `/activity` | Notes and actions in one list, newest first. Filters: `job`, `owner`, `person`, `source` (project, accounting, app), `kind`, `people_only`; paged |
+| GET | `/activity` | Notes and actions in one list, newest first. Each entry names its `action`, the `record` it was done to and what it `changes` from and to. Filters: `job`, `owner`, `person`, `source` (project, accounting, app), `kind`, `people_only`; paged |
 | GET | `/notes/reading` | How many notes the assistant has not read yet |
 | POST | `/notes/read` | Have the assistant read every unread note for promises and waits. A note is read once, and again only if its text changes |
 | GET | `/commitments` | Promises and waits read from notes, missed first. Filter by `job`, `owner`, `kind`, `state` (`active`, `missed`, `due_soon`, `open`, `kept`, `done`, `all`) |

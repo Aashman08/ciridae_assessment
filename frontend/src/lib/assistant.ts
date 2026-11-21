@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
-import type { AskPage, AskSource, Item } from './api'
+import type { ActivityEntry, AskPage, AskSource, Item } from './api'
 
 /** What the side pane is showing. It is closed when this is null. */
 export type AssistantView =
@@ -9,6 +9,8 @@ export type AssistantView =
   | { kind: 'coding'; item: Item }
   /** An invoice or vendor bill laid out as a document. */
   | { kind: 'document'; lineId: number; documentKind: 'customer_invoice' | 'vendor_bill' }
+  /** One entry in the audit log, in full. */
+  | { kind: 'audit'; entry: ActivityEntry }
 
 export const AssistantContext = createContext<{
   view: AssistantView | null

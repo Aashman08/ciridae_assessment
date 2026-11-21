@@ -12,12 +12,13 @@ import { FOLLOW_UP_WORKING_DAYS } from '../lib/items'
 import { composeUrl, useMailApp } from '../lib/mail'
 import { useViewer } from '../lib/viewer'
 import { Composer, Messages, Working } from './Conversation'
+import { AuditDetail } from './AuditDetail'
 import { DocumentView } from './DocumentView'
 import { Button, ErrorNote } from './ui'
 
 const ICON = { size: '1rem', strokeWidth: 1.5, 'aria-hidden': true } as const
 
-const TITLES = { chat: 'Ask AI', draft: 'Follow-up draft', coding: 'Which job is this bill for' } as const
+const TITLES = { chat: 'Ask AI', draft: 'Follow-up draft', coding: 'Which job is this bill for', audit: 'Audit log entry' } as const
 const DOCUMENTS = { customer_invoice: 'Customer invoice', vendor_bill: 'Vendor bill' } as const
 
 /** The assistant, asked from whatever page is open. It is told which page that is. */
@@ -435,6 +436,7 @@ export function AssistantPane() {
       {view.kind === 'draft' && <DraftPreview key={view.item.key} item={view.item} />}
       {view.kind === 'coding' && <CodingSuggestion key={view.item.key} item={view.item} />}
       {view.kind === 'document' && <DocumentView key={view.lineId} lineId={view.lineId} />}
+      {view.kind === 'audit' && <AuditDetail key={view.entry.ref} entry={view.entry} />}
     </aside>
   )
 }

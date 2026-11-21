@@ -309,9 +309,21 @@ class ActivityFilters(Paging):
     people_only: bool = Field(False, description="Leave out what syncs did, so only what people wrote or did remains")
 
 
+class ActivityChange(BaseModel):
+    field: str
+    before: str | None
+    after: str | None
+
+
 class ActivityEntry(BaseModel):
     """One note or one action, newest first in any list of them."""
 
+    ref: str = Field(description="A stable id for the entry, such as event:42")
+    action: str = Field(description="What was done, as a short verb phrase, such as Resolved or Changed tolerance")
+    record: str | None = Field(None, description="What it was done to: an invoice or bill number, a job number, or a check's name")
+    changes: list[ActivityChange] = Field(default_factory=list, description="What the action changed, from and to")
+    document_line_id: int | None = Field(None, description="The invoice or bill it concerns, for opening its preview")
+    document_kind: Literal["customer_invoice", "vendor_bill"] | None = None
     at: datetime
     source: ActivitySource
     kind: str

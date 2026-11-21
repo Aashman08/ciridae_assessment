@@ -12,6 +12,7 @@ import {
   Moon,
   Plug,
   Receipt,
+  RefreshCw,
   TriangleAlert,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -21,7 +22,7 @@ import { api } from '../lib/api'
 import { useAssistant } from '../lib/assistant'
 import { dateTime, longDate } from '../lib/format'
 import { cx } from '../lib/styles'
-import { useLatestSync } from '../lib/sync'
+import { useLatestSync, useRunSync } from '../lib/sync'
 import { useTheme } from '../lib/theme'
 import { useViewer, VIEWERS } from '../lib/viewer'
 import { AssistantPane } from './AssistantPane'
@@ -262,6 +263,7 @@ function Crumb() {
 function TopBarRight() {
   const client = useQueryClient()
   const latest = useLatestSync()
+  const sync = useRunSync()
   const { view, show, close } = useAssistant()
   const { pathname } = useLocation()
   const run = latest.data
@@ -284,6 +286,11 @@ function TopBarRight() {
           Last synced {dateTime(run.finished_at ?? run.started_at)}
         </p>
       )}
+      {/* Syncs run on a schedule; this reads all three systems again now, from any page. */}
+      <Button disabled={sync.isPending} onClick={() => sync.mutate()}>
+        <RefreshCw {...ICON} className={sync.isPending ? 'animate-spin' : undefined} />
+        <span className="max-sm:sr-only">{sync.isPending ? 'Syncing' : 'Sync now'}</span>
+      </Button>
       {/* The Ask page is the assistant already. */}
       {pathname !== '/ask' && (
         <Button aria-pressed={chatting} onClick={() => (chatting ? close() : show({ kind: 'chat' }))}>
