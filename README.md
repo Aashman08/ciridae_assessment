@@ -27,6 +27,7 @@ OpenAI key (Enter skips; the AI features stay off), and runs the first sync.
 ## Read more
 
 - [WRITEUP.md](WRITEUP.md): what we built, for whom, why, and how
+- [AI_USED.md](AI_USED.md): where AI is used, in the app and in building it
 - [frontend/](frontend/README.md): the screens
 - [backend/](backend/README.md): settings, tests and layout
 - [backend/app/](backend/app/README.md): the API
