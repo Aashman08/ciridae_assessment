@@ -1,0 +1,123 @@
+# The built-in checks. Each block defines one check; its logic is the function of the
+# same name in issues.py, marked @check("<key>"). A test fails if the two ever disagree.
+#
+# Code owns title, description, about and unit: they update on every start.
+# People own severity, tolerance and on/off: the values here only seed a new database,
+# and after that the Checks screen changes them.
+#
+# about: cash | billing | cost | schedule | ownership
+# unit:  ratio (0.02 is 2%) | usd | days
+
+[closed_bills]
+title = "Closed with unpaid vendor bills"
+description = "The job is closed but a vendor bill on it is still unpaid."
+severity = "high"
+about = "cash"
+
+[past_due]
+title = "Customer invoice past due"
+description = "A sent invoice still has a balance after its due date."
+severity = "high"
+about = "cash"
+
+[not_sent]
+title = "Invoice not sent"
+description = "An invoice is approved, still a draft, or failed to reach accounting."
+severity = "high"
+about = "billing"
+
+[over_contract]
+title = "Cost above contract"
+description = "The budget or the cost so far is higher than the contract value."
+severity = "high"
+about = "cost"
+
+[closed_month]
+title = "Bill in a closed month, not booked"
+description = "A vendor bill is dated in a month finance has closed and has not been posted, so that month's cost is short."
+severity = "high"
+about = "cash"
+
+[cost_disagree]
+title = "Ops and ledger cost disagree"
+description = "The project team's cost total and the ledger's differ by more than the tolerance."
+severity = "medium"
+about = "cost"
+tolerance = "0.02"
+unit = "ratio"
+
+[no_ledger_cost]
+title = "Cost missing from ledger"
+description = "The project team has logged cost and the ledger has none for the job."
+severity = "medium"
+about = "cost"
+
+[rev_invoiced]
+title = "Ledger revenue differs from invoiced"
+description = "Revenue in the ledger and the job's invoices differ by more than the tolerance."
+severity = "medium"
+about = "billing"
+tolerance = "0.02"
+unit = "ratio"
+
+[underbilled]
+title = "Completed, not fully billed"
+description = "Work is complete and invoices total less than the contract by more than the tolerance."
+severity = "medium"
+about = "billing"
+tolerance = "1"
+unit = "usd"
+
+[bill_overdue]
+title = "Vendor bill failed or overdue"
+description = "A vendor bill failed to post, or is posted and past its due date."
+severity = "medium"
+about = "cash"
+
+[discount]
+title = "Early-pay discount at risk"
+description = "A bill from a vendor with discount terms is not yet approved and the deadline has not passed."
+severity = "medium"
+about = "cash"
+
+[no_job]
+title = "Vendor bill with no job"
+description = "A vendor bill is not assigned to any job."
+severity = "medium"
+about = "cost"
+
+[no_owner]
+title = "No operations owner"
+description = "The job has no ops manager assigned."
+severity = "medium"
+about = "ownership"
+
+[slow_start]
+title = "Slow to start"
+description = "The job is not on site yet and will start more than the tolerance after it was won. Urgent jobs: more than 1 day."
+severity = "medium"
+about = "schedule"
+tolerance = "14"
+unit = "days"
+
+[past_finish]
+title = "Past planned finish"
+description = "The job is still in progress after its planned finish date."
+severity = "high"
+about = "schedule"
+
+[no_activity]
+title = "No work logged"
+description = "The job is in progress and no cost or vendor bill is dated within the tolerance."
+severity = "medium"
+about = "schedule"
+tolerance = "14"
+unit = "days"
+
+[budget_burn]
+title = "Spending ahead of schedule"
+description = "The share of budget used is ahead of the share of schedule gone by more than the tolerance, or cost is over budget."
+severity = "medium"
+about = "cost"
+tolerance = "0.10"
+unit = "ratio"

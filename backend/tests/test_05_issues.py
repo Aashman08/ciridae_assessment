@@ -218,3 +218,18 @@ async def test_actions_are_validated(recon):
         await recon.update_issue_type("no_owner", IssueTypeUpdate(tolerance=D("0.5")))
     issue = await find(recon, key)
     assert (issue.status, [e.kind for e in issue.events]) == ("open", ["opened"])
+
+
+def test_checks_toml_and_the_check_functions_match():
+    """Every block in checks.toml has a @check function and every @check function has a
+    block, and each block is complete and uses known values. If this fails, the file and
+    the code have drifted apart."""
+    from app.checks.issues import CHECKS, DEFINITIONS
+
+    assert set(DEFINITIONS) == set(CHECKS)
+    for d in DEFINITIONS.values():
+        assert d.title and d.description, d.key
+        assert d.severity in ("high", "medium"), d.key
+        assert d.about in ("cash", "billing", "cost", "schedule", "ownership"), d.key
+        assert (d.tolerance is None) == (d.unit is None), f"{d.key}: tolerance and unit go together"
+        assert d.unit in (None, "ratio", "usd", "days"), d.key
