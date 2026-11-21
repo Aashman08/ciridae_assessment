@@ -198,11 +198,59 @@ billed are on screen, each with an owner and a next step.
 
 ## 10. What I will do next
 
+### 10.1 The platform
+
 1. **Connectors.** Connect live to the CRM, the project system, accounting, email and the
-   team's chat tool. After a person approves, the app sends the invoice, approves the bill
-   or sends the message. The AI reads each reply and updates the item.
-2. **Maya Chen, COO: lead to cash by branch.** One screen shows where each branch loses
-   time or money, from new loss to start, invoice and cash. A weekly AI brief tells her what changed.
-3. **Devon Brooks, VP of Growth: a pipeline that fills itself.** The AI reads sales email
-   and meeting notes, logs each contact and suggests each change of stage. Devon sees
-   which deals are real, where conversion is slow, and which customers need attention.
+   team's chat tool. After a person approves, the app sends the invoice, approves the
+   bill or sends the message. The AI reads each reply and updates the item.
+2. **Sign-in.** Use the company's single sign-on (Google or Microsoft). Each action in
+   the audit log then shows the real person, not a selected name.
+3. **Roles and access for the back office.** About 100 people work in accounts payable,
+   accounts receivable, finance, operations, estimating and sales. Each person gets a role:
+
+   | Role | Sees | Can do |
+   | --- | --- | --- |
+   | Accounts payable | All vendor bills | Code, approve and chase bills |
+   | Accounts receivable | All customer invoices | Send invoices, chase customers |
+   | Finance lead | Everything | All of the above, change checks, close the month |
+   | Operations manager | Their own jobs | Act on items for their jobs |
+   | Project director | Their team's jobs, all branches they cover | Assign and act on their team's items |
+   | Leadership | Everything, read-only | Read figures and reports |
+   | Admin | Users and roles | Add people and set roles |
+
+   The API enforces each role, not the screen. The app already limits an operations
+   manager to their own jobs; roles extend that rule to each person.
+4. **Alerts.** Each morning, each person gets their list of items by email or chat. An
+   urgent job with no start date, or a missed promise to pay, alerts the owner at once.
+
+### 10.2 For the three people the app serves now
+
+**Rachel Kim, VP of Finance**
+- **Month-end close.** One screen for each month: bills not booked, invoices not sent,
+  revenue not billed. Rachel signs off the month when the list is empty.
+- **Cash forecast.** Expected cash in and out by week, from due dates, payment history
+  and the promises in notes.
+- **Approve bills in the app.** With write-back, a bill approved in the app is approved
+  in accounting. Early-pay discounts show their deadline.
+
+**Luis Ortega, VP of Operations**
+- **Start alerts for urgent jobs.** The owner gets an alert when an urgent job has no
+  start date. Luis sees the time from damage to start for each branch.
+- **Less admin for crews.** Crews confirm the start, log cost and add photos from a phone.
+- **Cost to finish.** Each job shows a forecast of the final cost, and a flag when the
+  margin falls below plan.
+
+**Tasha Green, Project Director**
+- **One queue for her team.** All items for her team, across branches, with the work
+  shown for each person so she can balance it.
+- **Vendor follow-ups.** The same draft and send flow for vendors as for customers.
+  Only 6 of the 10 vendors have an email address in the data, so the app also keeps a
+  list of vendor contacts.
+- **Fewer follow-ups.** The AI reads replies and updates items, so nobody checks by hand.
+
+### 10.3 For the other two people in the brief
+
+- **Maya Chen, COO: lead to cash by branch.** One screen shows where each branch loses
+  time or money, from new loss to start, invoice and cash.
+- **Devon Brooks, VP of Growth: a pipeline that fills itself.** The AI reads sales email
+  and meeting notes, logs each contact and suggests each change of stage.
