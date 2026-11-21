@@ -4,7 +4,7 @@ FastAPI, async SQLAlchemy 2 and PostgreSQL, run with [uv](https://docs.astral.sh
 
 ```bash
 ./run.sh                 # create the database and .env if missing, then start the API on :8000
-uv run pytest            # 157 tests; no key or network needed
+uv run pytest            # 159 tests; no key or network needed
 uv run alembic revision --autogenerate -m "..."   # after a change to app/core/models.py
 ```
 
