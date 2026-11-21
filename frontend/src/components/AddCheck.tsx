@@ -13,6 +13,8 @@ const LOOKS_AT: Record<CheckSubject, string> = {
   job: 'Each job',
   customer_invoice: 'Each customer invoice',
   vendor_bill: 'Each vendor bill',
+  customer: 'Each customer',
+  vendor: 'Each vendor',
 }
 
 /**

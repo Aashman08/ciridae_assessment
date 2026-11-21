@@ -887,14 +887,16 @@ class ReviewReply(BaseModel):
 
 # --- Checks people add ---------------------------------------------------------
 
-CheckSubject = Literal["job", "customer_invoice", "vendor_bill"]
+CheckSubject = Literal["job", "customer_invoice", "vendor_bill", "customer", "vendor"]
 
 
 class RuleCondition(BaseModel):
     """One test in a rule: a field compared with a value, or with another field."""
 
     field: str = Field(description="A field name from the list given for this kind of record")
-    op: Literal[">", ">=", "<", "<=", "=", "!="]
+    op: Literal[">", ">=", "<", "<=", "=", "!=", "contains", "does_not_contain"] = Field(
+        description="contains and does_not_contain are for text only, and match a word or phrase anywhere in it"
+    )
     value: float | str | bool | None = Field(description="What the field is compared with. Empty when comparing with other_field")
     other_field: str | None = Field(description="Another field to compare with, instead of a value")
     times: float | None = Field(description="With other_field only: compare with that field multiplied by this, such as 1.1 for 110%")
@@ -912,7 +914,7 @@ class CheckDraftReply(BaseModel):
     """What the model hands back when asked to turn a person's words into a check."""
 
     title: str = Field(min_length=3, max_length=80, description="A short name for the check, in sentence case")
-    subject: CheckSubject = Field(description="What it looks at: each job, each customer invoice or each vendor bill")
+    subject: CheckSubject = Field(description="What it looks at: each job, customer invoice, vendor bill, customer or vendor")
     about: Literal["cash", "billing", "cost", "schedule", "ownership"]
     severity: Literal["high", "medium"] = Field(description="high when money is at risk now or a deadline is close; otherwise medium")
     approach: Literal["rule", "reading", "cannot"] = Field(

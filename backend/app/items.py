@@ -179,7 +179,13 @@ def what_to_ask(kind: str, status: str | None, document: str | None) -> str:
 def _item_key(issue: Issue) -> str:
     kind = kind_of(issue.type_key)
     on_document = kind in DOCUMENT_KINDS or kind == "flagged"
-    subject = issue.document if on_document and issue.document else issue.job.job_number
+    if on_document and issue.document:
+        subject = issue.document
+    elif issue.job is not None:
+        subject = issue.job.job_number
+    else:
+        # A check about a customer or a vendor as a whole: the item is about them, by name.
+        subject = issue.subject
     return f"{kind}:{subject}"
 
 
@@ -269,7 +275,10 @@ def _item(key: str, members: list[Issue], as_of: date | None, today: date) -> It
         kind=kind,
         title=lead.type.title if kind == "flagged" else TITLES[kind],
         document=document,
-        company=(own.company.name if own and own.company else own.description if own else None),
+        company=(
+            own.company.name if own and own.company else own.description if own
+            else lead.subject if kind == "flagged" and lead.job is None and lead.document is None else None
+        ),
         job_number=lead.job.job_number if lead.job else None,
         job_name=lead.job.name if lead.job else None,
         amount=amount,

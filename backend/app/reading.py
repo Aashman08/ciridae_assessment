@@ -33,13 +33,14 @@ logger = logging.getLogger(__name__)
 BATCH = 15
 
 INSTRUCTIONS = """\
-You check notes written at Harborstone, a commercial restoration contractor, against one
-check a person has described. For each job or invoice you are given its notes. Say which
-ones the check applies to.
+You check what was written at Harborstone, a commercial restoration contractor, against
+one check a person has described. For each job, invoice, bill, customer or vendor you are
+given what there is to read about it: notes people wrote, the email a bill came on, and
+what a bill's lines say. Say which ones the check applies to.
 
 For each one it applies to, give:
-- subject: its job number or invoice number, exactly as given.
-- quote: the exact words from its notes that show the check applies, copied character
+- subject: its job number, document number or name, exactly as given.
+- quote: the exact words from what you were given that show the check applies, copied character
   for character. Not a summary.
 - reason: one sentence on why those words match the check.
 
@@ -53,17 +54,41 @@ def _same(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
-async def texts(db: AsyncSession, subject: str) -> dict[str, str]:
-    """The notes on each job or invoice, as one block of text each, oldest first."""
-    query = select(Note, Job.job_number).outerjoin(Job, Job.id == Note.job_id).order_by(Note.written_at, Note.id)
-    if subject == "customer_invoice":
-        query = query.where(Note.document.is_not(None))
+async def texts(db: AsyncSession, subject: str, run: SyncRun | None = None) -> dict[str, str]:
+    """What there is to read about each record of this kind, as one block of text each:
+    notes for jobs, invoices and customers; the email a bill came on and what its lines say
+    for bills and vendors."""
+    from app.models import Company
+    from app.rules import EMAIL_SUBJECT, _lines_text
+
     by: dict[str, list[str]] = defaultdict(list)
-    for note, job_number in await db.execute(query):
-        key = note.document if subject == "customer_invoice" else job_number
-        if key:
-            where = "project system" if note.source == "project" else f"accounting, on {note.document}"
-            by[key].append(f"{note.written_at:%d %b %Y}, {note.written_by}, {where}: {note.body}")
+    if subject in ("job", "customer_invoice", "customer"):
+        query = (
+            select(Note, Job.job_number, Company.name)
+            .outerjoin(Job, Job.id == Note.job_id)
+            .outerjoin(Company, Company.id == Job.customer_id)
+            .order_by(Note.written_at, Note.id)
+        )
+        for note, job_number, customer_name in await db.execute(query):
+            key = {"customer_invoice": note.document, "customer": customer_name}.get(subject, job_number)
+            if key:
+                where = "project system" if note.source == "project" else f"accounting, on {note.document}"
+                by[key].append(f"{note.written_at:%d %b %Y}, {note.written_by}, {where}: {note.body}")
+    else:
+        query = (
+            select(line.doc_number, Company.name, EMAIL_SUBJECT.label("email"), _lines_text("ap_invoice_lines").label("lines"))
+            .outerjoin(Company, Company.id == line.company_id)
+            .where(line.kind == "vendor_bill")
+            .order_by(line.doc_number)
+        )
+        for number, vendor_name, email, lines in await db.execute(query):
+            key = number if subject == "vendor_bill" else vendor_name
+            if not key:
+                continue
+            if email:
+                by[key].append(f"Email about bill {number}: {email}")
+            if lines:
+                by[key].append(f"Bill {number} lines: {lines}")
     return {key: "\n".join(lines) for key, lines in by.items()}
 
 
@@ -94,12 +119,11 @@ async def read(instruction: str, subject: str, shown: dict[str, str]) -> dict[st
         model=assistant.build_model(),
         output_type=ReadingReply,
     )
-    kind = "invoice" if subject == "customer_invoice" else "job"
     flags: dict[str, dict] = {}
     keys = sorted(shown)
     for start in range(0, len(keys), BATCH):
         batch = {key: shown[key] for key in keys[start : start + BATCH]}
-        brief = json.dumps({"check": instruction, f"{kind}s": [{"subject": k, "notes": v} for k, v in batch.items()]}, ensure_ascii=False)
+        brief = json.dumps({"check": instruction, "records": [{"subject": k, "text": v} for k, v in batch.items()]}, ensure_ascii=False)
         result = await Runner.run(agent, brief, max_turns=2)
         usage = result.context_wrapper.usage
         logger.info("Reading check used requests=%s input_tokens=%s output_tokens=%s subjects=%s", usage.requests, usage.input_tokens, usage.output_tokens, len(batch))
@@ -118,33 +142,40 @@ async def from_readings(
         return []
     subjects = [r.subject for r in readings]
     found = []
-    if issue_type.subject == "customer_invoice":
+    kind = issue_type.subject or "job"
+    if kind in ("customer_invoice", "vendor_bill"):
         rows = {
             r.doc_number: r
             for r in await db.execute(
                 select(line.id, line.doc_number, (line.amount - line.paid_amount).label("open_amount"), Job.id.label("job_id"), OWNER)
                 .outerjoin(Job, Job.id == line.job_id)
-                .where(line.kind == "customer_invoice", line.doc_number.in_(subjects))
+                .where(line.kind == kind, line.doc_number.in_(subjects))
             )
         }
-    else:
+    elif kind == "job":
         rows = {
             r.job_number: r
             for r in await db.execute(select(Job.id.label("job_id"), Job.job_number, OWNER).where(Job.job_number.in_(subjects)))
         }
+    else:
+        from app.models import Company
+
+        rows = {name: None for name in await db.scalars(select(Company.name).where(Company.name.in_(subjects)))}
     for reading in readings:
-        row = rows.get(reading.subject)
-        if row is None:
+        if reading.subject not in rows:
             continue
-        on_invoice = issue_type.subject == "customer_invoice"
+        row = rows[reading.subject]
+        on_document = kind in ("customer_invoice", "vendor_bill")
         found.append(
             Finding(
-                issue_type.key, reading.subject, Decimal(row.open_amount) if on_invoice else Decimal(0),
+                issue_type.key, reading.subject, Decimal(row.open_amount) if on_document else Decimal(0),
                 summary=issue_type.title,
-                detail=f"The notes say: “{reading.quote}”. {reading.reason}",
+                detail=f"It says: \u201c{reading.quote}\u201d. {reading.reason}",
                 next_step="Look into it and say what is behind it.", action_label="Ask about it",
-                owner=row.owner, job_id=row.job_id, document=reading.subject if on_invoice else None,
-                evidence=[row.id] if on_invoice else [],
+                owner=row.owner if row is not None else "Finance queue",
+                job_id=row.job_id if row is not None else None,
+                document=reading.subject if on_document else None,
+                evidence=[row.id] if on_document else [],
             )
         )
     return found

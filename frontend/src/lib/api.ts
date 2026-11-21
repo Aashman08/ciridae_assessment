@@ -255,7 +255,7 @@ export interface IssueType {
   created_by: string | null
 }
 
-export type CheckSubject = 'job' | 'customer_invoice' | 'vendor_bill'
+export type CheckSubject = 'job' | 'customer_invoice' | 'vendor_bill' | 'customer' | 'vendor'
 
 /** A check's test over fixed fields, as the backend validated it. Sent back unchanged when the check is added. */
 export interface Rule {

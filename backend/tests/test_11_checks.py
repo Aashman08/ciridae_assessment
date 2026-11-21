@@ -28,10 +28,10 @@ def reply(body: dict) -> ResponseOutputMessage:
     )
 
 
-def wrote(approach: str, rule: dict | None = None, subject: str = "customer_invoice", title: str = "Large invoice still open") -> ResponseOutputMessage:
+def wrote(approach: str, rule: dict | None = None, subject: str = "customer_invoice", title: str = "Large invoice still open", reason: str = "It can be tested on the fields.") -> ResponseOutputMessage:
     return reply({
         "title": title, "subject": subject, "about": "cash", "severity": "high",
-        "approach": approach, "rule": rule, "reason": "It can be tested on the fields.",
+        "approach": approach, "rule": rule, "reason": reason,
     })
 
 
@@ -157,9 +157,77 @@ async def test_a_reading_check_keeps_only_findings_that_quote_the_notes(api, db,
     assert await db.scalar(text(f"select count(*) from recon.issue where type_key = '{check['key']}' and status = 'open'")) == 0
 
 
-async def test_a_reading_check_cannot_look_at_vendor_bills(api):
-    response = await api.post(f"{API}/checks", json={
-        "title": "Vendor says the bill is wrong", "words": "The vendor says the bill amount is wrong",
-        "subject": "vendor_bill", "approach": "reading", "about": "cost", "actor": "Rachel Kim",
+async def test_the_writer_is_shown_every_kind_of_record_with_the_values_in_the_data(api, model):  # noqa: F811
+    scripted = model(wrote("cannot", reason="Not something the records show."))
+    await api.post(f"{API}/checks/draft", json={"words": "Anything at all worth a look"})
+    brief = json.loads(scripted.requests[0]["input"][0]["content"])
+    assert set(brief["fields_by_subject"]) == {"job", "customer_invoice", "vendor_bill", "customer", "vendor"}
+    job_fields = {f["field"]: f for f in brief["fields_by_subject"]["job"]}
+    assert {"ledger_margin_pct", "days_since_last_work", "open_issue_count", "customer", "branch"} <= set(job_fields)
+    # Text fields come with the values they hold today, so a rule uses ones that exist.
+    assert "IN_PROGRESS" in job_fields["stage"]["values_today"]
+    assert "Rachel Kim" not in job_fields["ops_manager"].get("values_today", []) and job_fields["ops_manager"]["values_today"]
+
+
+async def test_a_customer_check_adds_up_across_their_invoices(api, model):  # noqa: F811
+    model(wrote("rule", {
+        "match": "all",
+        "conditions": [{"field": "owed", "op": ">", "value": 200000, "other_field": None, "times": None}],
+        "amount_field": "owed",
+    }, subject="customer", title="Customer owes a lot"))
+    draft = (await api.post(f"{API}/checks/draft", json={"words": "Customers who owe us more than $200k"})).json()
+    assert draft["reads_as"] == "Flags a customer where owed is more than $200,000"
+    assert [(f["subject"], f["amount"]) for f in draft["would_flag"]] == [("Northgate Independent School District", "246300.00")]
+
+    created = await api.post(f"{API}/checks", json={
+        "title": "Customer owes a lot", "words": "Customers who owe us more than $200k", "subject": "customer",
+        "approach": "rule", "rule": draft["rule"], "about": "cash", "actor": "Rachel Kim",
     })
-    assert response.status_code == 400
+    assert created.json()["open_count"] == 1
+    # It is about a customer, not a job, so its item names the customer and sits with the ones on no job.
+    item = next(i for i in await items(api) if i["title"] == "Customer owes a lot")
+    assert (item["job_number"], item["company"], item["owner"]) == (None, "Northgate Independent School District", "Finance queue")
+
+
+async def test_a_rule_can_look_for_words_on_a_bills_lines(api, model):  # noqa: F811
+    model(wrote("rule", {
+        "match": "all",
+        "conditions": [{"field": "lines_text", "op": "contains", "value": "scaffold", "other_field": None, "times": None}],
+        "amount_field": "open_amount",
+    }, subject="vendor_bill", title="Scaffold bills"))
+    draft = (await api.post(f"{API}/checks/draft", json={"words": "Bills for scaffolding"})).json()
+    assert draft["reads_as"] == "Flags a vendor bill where what it bills for mentions \u201cscaffold\u201d"
+    assert sorted(f["subject"] for f in draft["would_flag"]) == ["APX-40766", "APX-40912"]
+
+
+async def test_a_reading_check_on_bills_reads_the_email_each_came_on(api, model):  # noqa: F811
+    scripted = model(
+        wrote("reading", subject="vendor_bill", title="Vendor chasing payment"),
+        flagged(
+            {"subject": "APX-40766", "quote": "Past due reminder", "reason": "The vendor is chasing payment."},
+            {"subject": "ARS-20447", "quote": "Final notice before collections", "reason": "Not in the email; dropped."},
+        ),
+    )
+    draft = (await api.post(f"{API}/checks/draft", json={"words": "The vendor is chasing us for payment"})).json()
+    assert draft["approach"] == "reading"
+    assert [f["subject"] for f in draft["would_flag"]] == ["APX-40766"]
+    # What it read for a bill: the email's subject and the bill's own lines.
+    sent = json.dumps(scripted.requests[1]["input"])
+    assert "Past due reminder" in sent and "Exterior scaffold" in sent
+
+
+async def test_every_field_the_writer_is_shown_runs_against_the_data(recon):
+    """Each field of each kind of record compiles to SQL and runs, so no rule the assistant
+    could write fails on a sync."""
+    from app.models import IssueType
+    from app.rules import FIELDS, NUMBERS, run_rule
+    from app.schemas import Rule
+
+    run = await recon._current_run()
+    for subject, fields in FIELDS.items():
+        for name, f in fields.items():
+            value = -1e9 if f.kind in NUMBERS else (True if f.kind == "bool" else "zzz-not-a-value")
+            op = ">" if f.kind in NUMBERS else ("=" if f.kind == "bool" else "!=")
+            rule = Rule(match="all", conditions=[{"field": name, "op": op, "value": value, "other_field": None, "times": None}], amount_field=None)
+            probe = IssueType(key="probe", title="probe", subject=subject, origin="rule", rule=rule.model_dump())
+            await run_rule(recon.db, run, probe, rule)

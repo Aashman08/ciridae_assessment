@@ -599,7 +599,9 @@ class ReconClient:
         against the fields and run as code; a reading check is read over today's notes, and
         only findings that quote those notes are shown."""
         run = await self._current_run()
-        reply = await self._with_model(check_writer.draft(payload.words))
+        # The assistant sees every field of every kind of record, with the values text fields hold today.
+        values = {subject: await rules.values_today(self.db, run, subject) for subject in rules.FIELDS}
+        reply = await self._with_model(check_writer.draft(payload.words, values))
         subject = reply.subject
         named = {"title": reply.title.strip(), "subject": subject, "about": reply.about, "severity": reply.severity}
         if reply.approach == "rule":
@@ -613,16 +615,11 @@ class ReconClient:
                 would_flag=await self._check_findings(findings),
             )
         if reply.approach == "reading":
-            if subject == "vendor_bill":
-                return CheckDraftResponse(
-                    **named, approach="cannot", reason="Only reading notes could tell, and vendor bills carry no notes.",
-                    rule=None, reads_as=None, would_flag=[],
-                )
             shown = await reading.texts(self.db, subject)
             flags = await self._with_model(reading.read(payload.words, subject, shown)) if shown else {}
             return CheckDraftResponse(
                 **named, approach="reading", reason=reply.reason, rule=None,
-                reads_as=f"The assistant reads the notes on each {rules.SUBJECT_WORDS[subject]} for: {payload.words}",
+                reads_as=f"The assistant reads what is written about each {rules.SUBJECT_WORDS[subject]} for: {payload.words}",
                 would_flag=await self._reading_findings(subject, flags),
             )
         return CheckDraftResponse(**named, approach="cannot", reason=reply.reason, rule=None, reads_as=None, would_flag=[])
@@ -657,8 +654,6 @@ class ReconClient:
             rule = rules.validate(payload.rule, payload.subject)
             description = rules.in_words(rule, payload.subject)
         else:
-            if payload.subject == "vendor_bill":
-                raise InvalidRequestError("Vendor bills carry no notes, so a reading check cannot look at them.")
             rule, description = None, f"Read by the assistant: {payload.words}"
 
         slug = re.sub(r"[^a-z0-9]+", "_", payload.title.lower()).strip("_")[:24] or "check"
@@ -1156,7 +1151,10 @@ class ReconClient:
             raise ItemNotFoundError(key)
         if kind == "flagged":
             # A check people added flags either a document or a job; the key names which.
-            where = or_(Issue.document == subject, Issue.job_id.in_(select(Job.id).where(Job.job_number == subject.upper())))
+            where = or_(
+                Issue.document == subject, Issue.subject == subject,
+                Issue.job_id.in_(select(Job.id).where(Job.job_number == subject.upper())),
+            )
         elif kind in DOCUMENT_KINDS:
             # The checks about the document itself, plus a closed job's check that cites it.
             on_same_job = select(Issue.job_id).where(Issue.document == subject, Issue.job_id.is_not(None))
