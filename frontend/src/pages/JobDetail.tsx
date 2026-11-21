@@ -1,4 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { ActivityTable } from '../components/ActivityTable'
@@ -16,13 +17,51 @@ interface FigurePickerProps<Basis extends string> {
   options: FigureOption<Basis>[]
   value: Basis
   onChange: (basis: Basis) => void
+  /** The figures that come from different systems of record and should agree. */
+  compare: Basis[]
+}
+
+/**
+ * A warning that two systems of record give different figures for the same thing,
+ * with the figures shown on hover or keyboard focus.
+ */
+function Disagreement({ title, figures }: { title: string; figures: { label: string; amount: string }[] }) {
+  const said = figures.map((f) => `${f.label} ${money(f.amount)}`).join(', ')
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label={`${title} differs across the systems of record: ${said}`}
+        className="grid size-6 place-items-center rounded-md text-accent-ink hover:bg-tint-amber focus-visible:bg-tint-amber"
+      >
+        <TriangleAlert size="1rem" strokeWidth={1.5} aria-hidden />
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none invisible absolute top-full left-0 z-20 mt-1 flex w-max max-w-[21rem] flex-col gap-1 rounded-lg border border-hair bg-card px-3 py-2 text-[0.8125rem] font-normal opacity-0 shadow-float transition-opacity duration-150 ease-out group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+      >
+        <span className="text-ink">{title} differs across the systems of record</span>
+        {figures.map((f) => (
+          <span key={f.label} className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 text-ink-2">
+            {f.label}
+            <span className="font-mono text-ink tabular-nums">{money(f.amount)}</span>
+          </span>
+        ))}
+      </span>
+    </span>
+  )
 }
 
 /** The figures one side of the profit sum could use, side by side. Pick one. */
-function FigurePicker<Basis extends string>({ title, name, options, value, onChange }: FigurePickerProps<Basis>) {
+function FigurePicker<Basis extends string>({ title, name, options, value, onChange, compare }: FigurePickerProps<Basis>) {
+  const compared = options.filter((option) => compare.includes(option.basis))
+  const differ = compared.length > 1 && new Set(compared.map((option) => Number(option.amount))).size > 1
   return (
     <Card className="flex flex-col gap-1 p-2">
-      <h2 className="px-3 pt-3 pb-1 font-medium">{title}</h2>
+      <h2 className="flex items-center gap-2 px-3 pt-3 pb-1 font-medium">
+        {title}
+        {differ && <Disagreement title={title} figures={compared.map((option) => ({ label: option.label, amount: option.amount }))} />}
+      </h2>
       <div role="radiogroup" aria-label={title} className="flex flex-col gap-1">
         {options.map((option) => (
           <label
@@ -262,8 +301,15 @@ export function JobDetail() {
           />
 
           <div className="grid grid-cols-1 gap-4 @[58rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_18.75rem] @[80rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_25rem]">
-            <FigurePicker title="Revenue" name="revenue" options={data.revenue_options} value={revenue} onChange={setRevenue} />
-            <FigurePicker title="Cost" name="cost" options={data.cost_options} value={cost} onChange={setCost} />
+            <FigurePicker
+              title="Revenue"
+              name="revenue"
+              options={data.revenue_options}
+              value={revenue}
+              onChange={setRevenue}
+              compare={['ledger', 'invoiced']}
+            />
+            <FigurePicker title="Cost" name="cost" options={data.cost_options} value={cost} onChange={setCost} compare={['ops_log', 'ledger']} />
             <ProfitResult job={data} />
           </div>
 
