@@ -3,7 +3,7 @@
 This document tells what we built for Harborstone, for whom, and why. It also tells
 how we made the decisions and how we did the work. It uses the rules of ASD-STE100
 Simplified Technical English: short sentences, active voice, and one word for one
-thing. For each screen, API route and agent, refer to [docs/reference.md](docs/reference.md).
+thing. For each screen, API route and agent, refer to the README in its folder.
 
 ## 1. Summary
 
