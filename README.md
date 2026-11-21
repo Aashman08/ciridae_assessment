@@ -37,6 +37,7 @@ createdb harborstone
 psql -d harborstone -f source_data.sql
 
 # 2. Start the API. It creates our database and .env if they are missing,
+#    asks once for an OpenAI key if none is set (Enter skips),
 #    applies migrations, and runs the first sync by itself.
 cd backend
 ./run.sh
@@ -60,7 +61,7 @@ cd frontend && API_URL=http://localhost:8010 npm run dev
 
 ### Turn on the AI
 
-Put an OpenAI key in `backend/.env`:
+`./run.sh` asks for a key the first time. To set it by hand, put it in `backend/.env`:
 
 ```bash
 OPENAI_API_KEY=sk-...

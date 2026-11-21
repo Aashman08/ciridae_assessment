@@ -31,6 +31,22 @@ if [[ ! -f .env ]]; then
     cp .env.example .env
 fi
 
+# The AI features need an OpenAI key. Ask once, when there is none and someone is at the terminal.
+if ! grep -qE '^OPENAI_API_KEY=.+' .env && [[ -t 0 ]]; then
+    printf 'No OpenAI key is set, so the AI features are off.\n'
+    read -r -s -p 'Paste an OpenAI API key to turn them on, or press Enter to skip: ' key
+    printf '\n'
+    if [[ -n "$key" ]]; then
+        # Replace a commented or empty line if there is one; otherwise add the key at the end.
+        if grep -qE '^#? ?OPENAI_API_KEY=' .env; then
+            sed -i.bak -E "s|^#? ?OPENAI_API_KEY=.*|OPENAI_API_KEY=${key}|" .env && rm -f .env.bak
+        else
+            printf 'OPENAI_API_KEY=%s\n' "$key" >> .env
+        fi
+        printf 'Saved to backend/.env. It stays on this machine; git ignores that file.\n'
+    fi
+fi
+
 printf 'Syncing Python environment...\n'
 uv sync
 
