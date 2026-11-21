@@ -60,6 +60,7 @@ SHORT = {
     "stalled": "Stalled",
     "budget_risk": "Spending ahead",
     "no_ops_manager": "No ops manager",
+    "flagged": "Flagged",
 }
 TITLES = {
     "invoice_unpaid": "Customer invoice unpaid",
@@ -72,6 +73,8 @@ TITLES = {
     "stalled": "Stalled",
     "budget_risk": "Spending ahead of schedule",
     "no_ops_manager": "No ops manager",
+    # A finding of a check a person added. Its own title is the check's name.
+    "flagged": "Flagged by a check",
 }
 # Items about when work happens. They are the ops manager's to answer.
 SCHEDULE_KINDS = ("late_start", "stalled", "budget_risk")
@@ -92,6 +95,11 @@ STATUS_WORDS = {
     "PENDING_CORPORATE_REVIEW": "Waiting on corporate review",
     "POSTING_FAILED": "Posting failed",
 }
+
+
+def kind_of(type_key: str) -> str:
+    """The kind of item an issue type's findings are. Checks people added are all "flagged"."""
+    return KIND_OF.get(type_key, "flagged")
 
 
 def working_days_from(start: date, days: int) -> date:
@@ -125,12 +133,14 @@ def work_for(kind: str, status: str | None) -> ItemAction:
         return ItemAction(key="message_colleague", label="Ask for a status update")
     if kind == "budget_risk":
         return ItemAction(key="message_colleague", label="Ask for a cost forecast")
+    if kind == "flagged":
+        return ItemAction(key="message_colleague", label="Ask about it")
     return ItemAction(key="assign_ops_manager", label="Assign an ops manager")
 
 
 def with_whom(kind: str, status: str | None) -> str:
     """Who a message about this item goes to inside the company: "ops" or "finance"."""
-    if kind in SCHEDULE_KINDS:
+    if kind in SCHEDULE_KINDS or kind == "flagged":
         return "ops"
     if kind in ("invoice_not_sent", "bill_stuck") and status in WITH_OPS:
         return "ops"
@@ -161,12 +171,15 @@ def what_to_ask(kind: str, status: str | None, document: str | None) -> str:
         return "Say where the job stands, what is holding it up, and the new finish date."
     if kind == "budget_risk":
         return "Give a forecast of the cost to finish, and say whether the budget will hold."
+    if kind == "flagged":
+        return "Say what is behind this and what will be done about it."
     return "Say who the ops manager for this job is."
 
 
 def _item_key(issue: Issue) -> str:
-    kind = KIND_OF[issue.type_key]
-    subject = issue.document if kind in DOCUMENT_KINDS and issue.document else issue.job.job_number
+    kind = kind_of(issue.type_key)
+    on_document = kind in DOCUMENT_KINDS or kind == "flagged"
+    subject = issue.document if on_document and issue.document else issue.job.job_number
     return f"{kind}:{subject}"
 
 
@@ -199,7 +212,7 @@ def _item(key: str, members: list[Issue], as_of: date | None, today: date) -> It
     live = active or members
     lead = live[0]
     checks = [i.type_key for i in live]
-    document = subject if kind in DOCUMENT_KINDS else None
+    document = subject if kind in DOCUMENT_KINDS or (kind == "flagged" and lead.document) else None
 
     # The document itself, when the item is about one.
     lines = {e.line.id: e.line for i in members for e in i.evidence}
@@ -233,6 +246,9 @@ def _item(key: str, members: list[Issue], as_of: date | None, today: date) -> It
         tags.append(ItemTag(key="underbilled", label="Complete, not fully billed"))
     if kind in SCHEDULE_KINDS:
         tags.extend(_schedule_tags(lead.job, live, as_of))
+    if kind == "flagged" and len(live) > 1:
+        # Several checks people added found the same record: one tag each.
+        tags.extend(ItemTag(key="flagged", label=i.type.title) for i in live)
 
     follow_up = min((i.follow_up_on for i in active if i.follow_up_on), default=None)
     state = "done" if not active else "waiting" if follow_up and follow_up > today else "needs_action"
@@ -251,7 +267,7 @@ def _item(key: str, members: list[Issue], as_of: date | None, today: date) -> It
     return ItemResponse(
         key=key,
         kind=kind,
-        title=TITLES[kind],
+        title=lead.type.title if kind == "flagged" else TITLES[kind],
         document=document,
         company=(own.company.name if own and own.company else own.description if own else None),
         job_number=lead.job.job_number if lead.job else None,

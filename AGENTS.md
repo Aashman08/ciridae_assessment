@@ -21,8 +21,9 @@ Source lives in `backend/app/`:
 - `items.py` groups issues into items, the things a person fixes, and holds the
   fixed rules for what work fixes each kind. `review.py` is the agent that reviews a
   job's items. Detection in `issues.py` is untouched; grouping happens on read.
-- `coding.py` is the bill coder, `drafts.py` is the follow-up drafter and
-  `commitments.py` reads notes for promises and waits. Each is one agent with a typed
+- `coding.py` is the bill coder, `drafts.py` is the follow-up drafter,
+  `commitments.py` reads notes for promises and waits, and `check_writer.py`,
+  `rules.py` and `reading.py` are the checks people add. Each is one agent with a typed
   reply that our code checks before it is returned. Whether a commitment was kept is
   worked out by code from the records, never by the model, and notes are read only
   when a person asks.
@@ -143,8 +144,18 @@ and margin formulas in `financials.py`; do not repeat them in routes or schemas.
 
 ## Ask and AI
 
-Figures, totals and issue detection are fixed logic and must stay that way. The
-model in `assistant.py` only answers questions, through tools.
+Figures and totals are fixed logic and must stay that way. The model in `assistant.py`
+only answers questions, through tools.
+
+Checks come three ways, and all run in the same detection step of a sync and produce
+issues the same way:
+- Built-in checks are code in `issues.py`.
+- Rule checks are added by a person in their own words. `check_writer.py` turns the
+  words into a rule over the fixed fields in `rules.py`, once, and `rules.py` validates
+  it and runs it as SQL on every sync. No model runs a rule.
+- Reading checks (`reading.py`) are for what only notes can show. The assistant reads
+  notes when a person asks, every finding must quote the notes and code checks the
+  quote, and a sync reuses what was decided. A sync never calls the model.
 
 - A tool is a typed, read-only call to one `ReconClient` method. Never add a tool
   that takes SQL, a table name or a free-form filter.

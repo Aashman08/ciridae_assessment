@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { AddCheck } from '../components/AddCheck'
 import { Button, Card, Loaded, PageHead, Toggle } from '../components/ui'
 import { api } from '../lib/api'
 import type { IssueType } from '../lib/api'
@@ -93,21 +94,43 @@ function Switch({ type }: { type: IssueType }) {
 }
 
 export function IssueTypes() {
+  const client = useQueryClient()
   const types = useQuery({ queryKey: ['issue-types'], queryFn: api.issueTypes })
   const sync = useRunSync()
+  const [adding, setAdding] = useState(false)
+  const reread = useMutation({
+    mutationFn: api.runReadingChecks,
+    onSuccess: () => Promise.all(['issue-types', 'items', 'job'].map((key) => client.invalidateQueries({ queryKey: [key] }))),
+  })
+  const readingChecks = types.data?.some((type) => type.origin === 'reading' && type.enabled)
 
   return (
     <>
       <PageHead
         title="Checks"
         aside={types.data?.length}
-        sub="Each type is one way the three systems can disagree about a job. Changes take effect on the next sync"
+        sub="What every sync looks for. The built-in checks compare the three systems; anyone who manages checks can add their own"
       >
-        {/* Syncs run on a schedule. This is for seeing the effect of a change straight away. */}
-        <Button disabled={sync.isPending} onClick={() => sync.mutate()}>
-          {sync.isPending ? 'Syncing' : 'Sync now'}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {reread.isError && <p className="text-[0.8125rem] text-neg">{reread.error.message}</p>}
+          {/* A sync never calls the model, so reading checks only read new notes when asked. */}
+          {readingChecks && (
+            <Button disabled={reread.isPending} onClick={() => reread.mutate()}>
+              {reread.isPending ? 'Reading notes' : 'Read new notes'}
+            </Button>
+          )}
+          {/* Syncs run on a schedule. This is for seeing the effect of a change straight away. */}
+          <Button disabled={sync.isPending} onClick={() => sync.mutate()}>
+            {sync.isPending ? 'Syncing' : 'Sync now'}
+          </Button>
+          {!adding && (
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              Add a check
+            </Button>
+          )}
+        </div>
       </PageHead>
+      {adding && <AddCheck onDone={() => setAdding(false)} />}
       <Card>
         <Loaded query={types}>
           {(data) => (
@@ -119,6 +142,7 @@ export function IssueTypes() {
                     <th>What it checks</th>
                     <th>Severity</th>
                     <th className="max-2xl:hidden">About</th>
+                    <th className="max-2xl:hidden">Added by</th>
                     <th className="num">Open</th>
                     <th className="num">Amount</th>
                     <th className="num">Tolerance</th>
@@ -133,11 +157,12 @@ export function IssueTypes() {
                           {type.title}
                         </Link>
                       </td>
-                      <td className="min-w-56 py-2 text-[0.8125rem] text-ink-2 whitespace-normal!">
+                      <td className="min-w-48 py-2 text-[0.8125rem] text-ink-2 whitespace-normal!">
                         {type.description.replace(/\.$/, '')}
                       </td>
                       <td className="text-ink-2 capitalize">{type.severity}</td>
                       <td className="text-ink-2 capitalize max-2xl:hidden">{type.about}</td>
+                      <td className="text-ink-2 max-2xl:hidden">{type.origin === 'built_in' ? 'Built in' : type.created_by}</td>
                       <td className="num">{type.open_count}</td>
                       <td className="num">{Number(type.open_amount) > 0 ? money(type.open_amount) : ''}</td>
                       <td className="text-right">

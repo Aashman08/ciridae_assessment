@@ -10,6 +10,9 @@ from app.middleware import require_api_key
 from app.schemas import (
     ActivityEntry,
     ActivityFilters,
+    CheckCreate,
+    CheckDraftRequest,
+    CheckDraftResponse,
     CommitmentAction,
     CommitmentFilters,
     CommitmentResponse,
@@ -380,6 +383,43 @@ async def list_people(request: Request) -> list[PersonResponse]:
 async def list_issue_types(request: Request) -> list[IssueTypeResponse]:
     async with create_recon_client(request.state.request_id) as client:
         return await client.list_issue_types()
+
+
+@router.post(
+    "/checks/draft",
+    tags=["Issue Types"],
+    summary="Turn a description into a check and show what it would flag, without saving it",
+    response_model=CheckDraftResponse,
+    responses={400: ERROR_400, 409: ERROR_409, 502: ERROR_502, 503: ERROR_503},
+)
+async def draft_check(payload: CheckDraftRequest, request: Request) -> CheckDraftResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.draft_check(payload)
+
+
+@router.post(
+    "/checks",
+    tags=["Issue Types"],
+    summary="Add a check; it runs now and on every sync after",
+    response_model=IssueTypeResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={400: ERROR_400, 409: ERROR_409, 502: ERROR_502, 503: ERROR_503},
+)
+async def create_check(payload: CheckCreate, request: Request) -> IssueTypeResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.create_check(payload)
+
+
+@router.post(
+    "/checks/read",
+    tags=["Issue Types"],
+    summary="Read new or changed notes for every reading check, and refresh what they found",
+    response_model=NotesReadResponse,
+    responses={409: ERROR_409, 502: ERROR_502, 503: ERROR_503},
+)
+async def run_reading_checks(request: Request) -> NotesReadResponse:
+    async with create_recon_client(request.state.request_id) as client:
+        return await client.run_reading_checks()
 
 
 @router.patch(

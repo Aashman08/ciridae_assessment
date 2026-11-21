@@ -113,7 +113,7 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 | Customer invoices, Vendor bills | Every invoice and bill across jobs |
 | Connectors | The three source systems with how much of each was read and when, and the email account a follow-up is sent with |
 | Audit log | Every action, read-only: everything anyone did in this app (issues found, updated, resolved, dismissed, checks changed, commitments marked done), newest first, filterable by who, what and job. What syncs did is hidden until switched on. Notes from the source systems are not here; they are on each job's page |
-| Checks (under Settings) | The seventeen checks, with an on/off switch and tolerance for each. **Sync now** here applies a change straight away |
+| Checks (under Settings) | What every sync looks for. Seventeen are built in. **Add a check** lets someone describe a new one in their own words: the assistant turns it into a rule over the records (which then runs on every sync as code, with no model) or, when only notes can show it, a reading check. **Try it** shows what it would flag today before it is saved. Every check has an on/off switch, and any with a tolerance can be tuned; **Sync now** applies a change straight away |
 
 | Folder | Holds |
 | --- | --- |
@@ -192,9 +192,12 @@ such as `"246300.00"`. Errors always look like
 | GET | `/notes/reading` | How many notes the assistant has not read yet |
 | POST | `/notes/read` | Have the assistant read every unread note for promises and waits. A note is read once, and again only if its text changes |
 | GET | `/commitments` | Promises and waits read from notes, missed first. Filter by `job`, `owner`, `kind`, `state` (`active`, `missed`, `due_soon`, `open`, `kept`, `done`, `all`) |
+| POST | `/checks/draft` | Turn a description into a check and show what it would flag today. Saves nothing |
+| POST | `/checks` | Add a check. It runs at once and on every sync after |
+| POST | `/checks/read` | Read new or changed notes for every reading check, and refresh what they found |
 | POST | `/commitments/{id}/actions` | `done` or `reopen`, with `actor`. Marking one done is kept in the activity log |
 
-## Five places the model does work
+## Six places the model does work
 
 | Where | What the model does | What stays fixed |
 |---|---|---|
@@ -202,6 +205,7 @@ such as `"246300.00"`. Errors always look like
 | **Bill coding** (`coding.py`) | Works out which job an unassigned vendor bill belongs to, from the bill's lines, the email it arrived on, the vendor's history and what each job is spending on. Says how sure it is, and can answer "not a job cost" or "not sure" | It may only name a job it was shown. A low-confidence job is reported as "not sure". A person accepts or rejects; nothing is written to accounting |
 | **Job review** (`review.py`) | Reads a job's items with their notes and history and says, for each, act now, wait until a date, or dismiss, and which to do first. This is what a rule cannot do: a note saying payment is promised for Friday means chasing today is wrong | Fixed rules in `items.py` already name the work that fixes each kind of item. The model may only choose among act, wait and dismiss; it cannot dismiss an unpaid invoice or bill, name an item that is not on the job, or set a date in the past. Its review is kept until an item changes. A person confirms every step |
 | **Reading notes** (`commitments.py`) | Reads the notes people wrote in the project system and accounting and pulls out every commitment in them: a customer's promise to pay, something promised to a customer, something the work is waiting on, or a next step the team said it would take, each with who, what and the date it resolves to. This is information no check can see; until now it lived in someone's head | It runs only when a person presses **Read new notes**, and never reads a note twice unless its text changed. Each commitment must cite a note it was shown, and a date before the note or more than six months after it is dropped. Whether a commitment was **kept or missed is never the model's call**: code works it out from the records (a payment after the note keeps a payment promise; a date passed with nothing since misses it). A missed payment promise tags its invoice "Payment promised by 31 Jul, not received", and the job review and drafts are given every commitment with its state |
+| **Checks people add** (`check_writer.py`, `rules.py`, `reading.py`) | Turns a person's description of a check into a rule over fixed fields, once, when the check is written; or, for something only notes can show (a dispute, a refusal), reads the notes for it | A rule may only name fields from a fixed list per kind of record, and is validated before anyone sees it; then it runs as SQL on every sync like a built-in check. A reading check's findings must quote the notes, and code drops any quote it cannot find. Notes are read only when a person asks, never by a sync. Findings from either kind are issues and items like any other |
 | **Follow-up drafts** (`drafts.py`) | Writes the words of a message about an issue | Who it goes to, their address and every fact it may use are chosen by code. Each dollar figure in the draft is checked against those facts. **Send** opens the message in the person's own Gmail, Outlook or mail app for them to send; the app has no mailbox access and sends nothing itself |
 
 ### How the bill coder is tested

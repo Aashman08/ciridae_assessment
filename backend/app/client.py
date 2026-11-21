@@ -17,11 +17,12 @@ from sqlalchemy.orm import aliased, selectinload
 
 import json
 import logging
+import re
 
 from agents.exceptions import AgentsException
 from openai import APIStatusError, AuthenticationError, OpenAIError, RateLimitError
 
-from app import assistant, coding, commitments, database, drafts, review
+from app import assistant, check_writer, coding, commitments, database, drafts, reading, review, rules
 from app.coding import CodingCase
 from app.connector import Connector, ExportConnector
 from app.errors import (
@@ -52,7 +53,7 @@ from app.financials import (
     share_pct,
 )
 from app.issues import DOCUMENT_TYPES, FINANCE_QUEUE, UNSENT_STATUSES, apply_action, find_issues
-from app.items import DOCUMENT_KINDS, KIND_OF, SCHEDULE_KINDS, TITLES, build_items, fingerprint, group_by_job, what_to_ask, with_whom, working_days_from
+from app.items import DOCUMENT_KINDS, SCHEDULE_KINDS, TITLES, build_items, fingerprint, group_by_job, kind_of, what_to_ask, with_whom, working_days_from
 from app.landing import land
 from app.models import (
     AskExchange,
@@ -65,6 +66,7 @@ from app.models import (
     Job,
     JobFinancials,
     JobOwner,
+    CheckReading,
     Commitment,
     MoneyLine,
     Note,
@@ -77,6 +79,10 @@ from app.normalize import normalize, person_name
 from app.schemas import (
     ActivityEntry,
     ActivityFilters,
+    CheckCreate,
+    CheckDraftRequest,
+    CheckDraftResponse,
+    CheckFinding,
     CommitmentAction,
     CommitmentFilters,
     CommitmentResponse,
@@ -585,6 +591,128 @@ class ReconClient:
         types = await self.db.scalars(select(IssueType).order_by(IssueType.sort_order))
         return [issue_type_response(t, *found.get(t.key, (0, ZERO))) for t in types]
 
+    # --- Checks people add ------------------------------------------------------
+
+    async def draft_check(self, payload: CheckDraftRequest) -> CheckDraftResponse:
+        """Turn a person's words into a check and show what it would flag today, without saving
+        anything. A rule is validated against the fields and run as code; a reading check is
+        read over today's notes, and only findings that quote those notes are shown."""
+        run = await self._current_run()
+        reply = await self._with_model(check_writer.draft(payload.words, payload.subject))
+        if reply.approach == "rule":
+            if reply.rule is None:
+                raise AskFailedError()
+            rule = rules.validate(reply.rule, payload.subject)
+            probe = IssueType(key="draft", title="draft", subject=payload.subject, origin="rule", rule=rule.model_dump())
+            findings = await rules.run_rule(self.db, run, probe, rule)
+            return CheckDraftResponse(
+                approach="rule", reason=reply.reason, rule=rule, reads_as=rules.in_words(rule, payload.subject),
+                would_flag=await self._check_findings(findings),
+            )
+        if reply.approach == "reading":
+            if payload.subject == "vendor_bill":
+                return CheckDraftResponse(
+                    approach="cannot", reason="Only reading notes could tell, and vendor bills carry no notes.",
+                    rule=None, reads_as=None, would_flag=[],
+                )
+            shown = await reading.texts(self.db, payload.subject)
+            flags = await self._with_model(reading.read(payload.words, payload.subject, shown)) if shown else {}
+            would = await self._reading_findings(payload.subject, flags)
+            return CheckDraftResponse(
+                approach="reading", reason=reply.reason, rule=None,
+                reads_as=f"The assistant reads the notes on each {rules.SUBJECT_WORDS[payload.subject]} for: {payload.words}",
+                would_flag=would,
+            )
+        return CheckDraftResponse(approach="cannot", reason=reply.reason, rule=None, reads_as=None, would_flag=[])
+
+    async def _check_findings(self, findings: list) -> list[CheckFinding]:
+        names = dict((await self.db.execute(select(Job.id, Job.job_number))).all())
+        titles = dict((await self.db.execute(select(Job.id, Job.name))).all())
+        return [
+            CheckFinding(
+                subject=f.subject, job_number=names.get(f.job_id), job_name=titles.get(f.job_id), amount=f.amount, why=f.detail,
+            )
+            for f in sorted(findings, key=lambda f: -f.amount)
+        ]
+
+    async def _reading_findings(self, subject: str, flags: dict[str, dict]) -> list[CheckFinding]:
+        probe = IssueType(key="draft", title="draft", subject=subject, origin="reading")
+        # Laid out exactly as a saved check's findings would be, from the same function.
+        kept = [
+            CheckReading(type_key="draft", subject=key, text_hash="", flagged=True, quote=flag["quote"], reason=flag["reason"])
+            for key, flag in flags.items()
+        ]
+        findings = await reading.from_readings(self.db, await self._current_run(), probe, kept)
+        return await self._check_findings(findings)
+
+    async def create_check(self, payload: CheckCreate) -> IssueTypeResponse:
+        """Add a check a person wrote. It runs at once over the current figures, and from then
+        on in every sync, next to the built-in checks, and its findings are items like theirs."""
+        run = await self._current_run()
+        if payload.approach == "rule":
+            if payload.rule is None:
+                raise InvalidRequestError("A rule check needs its rule. Try the check first.")
+            rule = rules.validate(payload.rule, payload.subject)
+            description = rules.in_words(rule, payload.subject)
+        else:
+            if payload.subject == "vendor_bill":
+                raise InvalidRequestError("Vendor bills carry no notes, so a reading check cannot look at them.")
+            rule, description = None, f"Read by the assistant: {payload.words}"
+
+        slug = re.sub(r"[^a-z0-9]+", "_", payload.title.lower()).strip("_")[:24] or "check"
+        key = f"custom_{slug}"
+        number = 1
+        while await self.db.get(IssueType, key):
+            number += 1
+            key = f"custom_{slug}_{number}"
+        last = await self.db.scalar(select(func.max(IssueType.sort_order)))
+        issue_type = IssueType(
+            key=key, title=payload.title, severity=payload.severity, about=payload.about, description=description,
+            enabled=True, tolerance=None, tolerance_unit=None, sort_order=(last or 0) + 1, origin=payload.approach,
+            instruction=payload.words, subject=payload.subject, rule=rule.model_dump() if rule else None,
+            created_by=payload.actor,
+        )
+        self.db.add(issue_type)
+        self.db.add(SettingChange(type_key=key, actor=payload.actor, summary=f"Added this check: {description}"))
+        await self.db.flush()
+        if payload.approach == "reading":
+            await self._read_for(issue_type)
+        await find_issues(self.db, run)
+        await self.db.commit()
+        found = await self._found_by_type(key)
+        return issue_type_response(issue_type, *found.get(key, (0, ZERO)))
+
+    async def _read_for(self, issue_type: IssueType) -> int:
+        """Read the notes a reading check has not read in their current form, and keep what it decides."""
+        shown = await reading.texts(self.db, issue_type.subject or "job")
+        known = {r.subject: r for r in await self.db.scalars(select(CheckReading).where(CheckReading.type_key == issue_type.key))}
+        stale = {key: text for key, text in shown.items() if key not in known or known[key].text_hash != reading.text_hash(text)}
+        if not stale:
+            return 0
+        flags = await self._with_model(reading.read(issue_type.instruction or issue_type.title, issue_type.subject or "job", stale))
+        for key, text in stale.items():
+            row = known.get(key) or CheckReading(type_key=issue_type.key, subject=key)
+            row.text_hash, row.flagged = reading.text_hash(text), key in flags
+            row.quote = flags.get(key, {}).get("quote")
+            row.reason = flags.get(key, {}).get("reason")
+            row.read_at = func.now()
+            self.db.add(row)
+        await self.db.flush()
+        return len(stale)
+
+    async def run_reading_checks(self) -> NotesReadResponse:
+        """Read new or changed notes for every reading check that is on, then refresh the issues
+        they found. A sync never calls the model; this is the one place reading checks read."""
+        run = await self._current_run()
+        checks = list(await self.db.scalars(select(IssueType).where(IssueType.origin == "reading", IssueType.enabled)))
+        read = 0
+        for issue_type in checks:
+            read += await self._read_for(issue_type)
+        if read:
+            await find_issues(self.db, run)
+        await self.db.commit()
+        return NotesReadResponse(notes_read=read, commitments_found=0)
+
     async def update_issue_type(self, key: str, payload: IssueTypeUpdate) -> IssueTypeResponse:
         """Switch a check on or off, or change its tolerance. Takes effect on the next sync."""
         issue_type = await self.db.get(IssueType, key)
@@ -892,11 +1020,12 @@ class ReconClient:
         issue = await self._issue(issue_id)
         if issue.status not in ACTIVE:
             raise InvalidStateError(f"A {issue.status} issue needs no follow-up. Reopen it first.")
-        kind = KIND_OF[issue.type_key]
+        kind = kind_of(issue.type_key)
         if issue.type_key == "closed_bills":
             subject = next((e.line.doc_number for e in issue.evidence if e.line.kind == BILL), None)
         else:
-            subject = issue.document if kind in DOCUMENT_KINDS else (issue.job.job_number if issue.job else None)
+            on_document = kind in DOCUMENT_KINDS or (kind == "flagged" and issue.document)
+            subject = issue.document if on_document else (issue.job.job_number if issue.job else None)
         return await self.draft_for_item(f"{kind}:{subject}", payload)
 
     # --- Items ---------------------------------------------------------------------
@@ -1023,7 +1152,10 @@ class ReconClient:
         kind, _, subject = key.partition(":")
         if kind not in TITLES or not subject:
             raise ItemNotFoundError(key)
-        if kind in DOCUMENT_KINDS:
+        if kind == "flagged":
+            # A check people added flags either a document or a job; the key names which.
+            where = or_(Issue.document == subject, Issue.job_id.in_(select(Job.id).where(Job.job_number == subject.upper())))
+        elif kind in DOCUMENT_KINDS:
             # The checks about the document itself, plus a closed job's check that cites it.
             on_same_job = select(Issue.job_id).where(Issue.document == subject, Issue.job_id.is_not(None))
             where = or_(Issue.document == subject, and_(Issue.type_key == "closed_bills", Issue.job_id.in_(on_same_job)))
@@ -1035,7 +1167,7 @@ class ReconClient:
                 select(Issue).where(where, Issue.status != "cleared").options(*ITEM_PARTS).execution_options(populate_existing=True)
             )
         )
-        members = [i for i in issues if KIND_OF[i.type_key] == kind]
+        members = [i for i in issues if kind_of(i.type_key) == kind]
         if not any(item.key == key for item in build_items(members, None)):
             raise ItemNotFoundError(key)
         return sorted(

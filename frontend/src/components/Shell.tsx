@@ -203,7 +203,7 @@ function Sidebar() {
       </nav>
 
       {/* Settings sit at the bottom under their own heading, in the same rows as the pages above them. */}
-      <div className="mt-auto flex gap-1 pt-3 md:flex-col md:gap-0.5 md:pt-6">
+      <div className="mt-auto flex gap-1 overflow-x-auto pt-3 md:flex-col md:gap-0.5 md:overflow-visible md:pt-6">
         <p className="hidden px-2 pb-2 text-xs leading-4 text-muted md:block">Settings</p>
         {viewer.managesChecks && (
           <NavLink to={CHECKS.to} className={({ isActive }) => `${ROW} ${isActive ? ROW_ACTIVE : ''}`}>

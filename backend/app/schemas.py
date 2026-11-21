@@ -275,6 +275,11 @@ class IssueTypeResponse(BaseModel):
     tolerance_unit: str | None
     open_count: int
     open_amount: Money
+    origin: Literal["built_in", "rule", "reading"] = Field(
+        "built_in", description="built_in: written in code. rule: added by a person, run as a rule. reading: added by a person, read by the assistant"
+    )
+    subject: str | None = Field(None, description="For a check a person added: job, customer_invoice or vendor_bill")
+    created_by: str | None = None
 
 
 class IssueTypeUpdate(BaseModel):
@@ -755,7 +760,7 @@ class AskAnswer(BaseModel):
 
 ItemKind = Literal[
     "invoice_unpaid", "invoice_not_sent", "bill_stuck", "bill_no_job", "cost_gap", "billing_gap",
-    "late_start", "stalled", "budget_risk", "no_ops_manager",
+    "late_start", "stalled", "budget_risk", "no_ops_manager", "flagged",
 ]
 ActionKey = Literal["message_customer", "message_colleague", "code_bill", "assign_ops_manager", "wait", "dismiss"]
 
@@ -878,6 +883,89 @@ class ReviewReply(BaseModel):
     items: list[ReviewedItem]
     first_item_key: str | None = Field(description="The item to deal with first, if any needs action")
     why_first: str | None
+
+
+# --- Checks people add ---------------------------------------------------------
+
+CheckSubject = Literal["job", "customer_invoice", "vendor_bill"]
+
+
+class RuleCondition(BaseModel):
+    """One test in a rule: a field compared with a value, or with another field."""
+
+    field: str = Field(description="A field name from the list given for this kind of record")
+    op: Literal[">", ">=", "<", "<=", "=", "!="]
+    value: float | str | bool | None = Field(description="What the field is compared with. Empty when comparing with other_field")
+    other_field: str | None = Field(description="Another field to compare with, instead of a value")
+    times: float | None = Field(description="With other_field only: compare with that field multiplied by this, such as 1.1 for 110%")
+
+
+class Rule(BaseModel):
+    """A check written over the fixed fields of one kind of record. Code runs it; it is never sent to a model to judge."""
+
+    match: Literal["all", "any"] = Field(description="all: every condition must hold. any: one is enough")
+    conditions: list[RuleCondition] = Field(min_length=1, max_length=6)
+    amount_field: str | None = Field(description="The money field that says how much is at stake, if one does")
+
+
+class CheckDraftReply(BaseModel):
+    """What the model hands back when asked to turn a person's words into a check."""
+
+    approach: Literal["rule", "reading", "cannot"] = Field(
+        description="rule: it can be tested on the fields. reading: only reading notes can tell. cannot: neither"
+    )
+    rule: Rule | None = Field(description="With approach rule only")
+    reason: str = Field(min_length=1, max_length=300, description="One sentence: why this approach, or why it cannot be done")
+
+
+class ReadingFlag(BaseModel):
+    subject: str = Field(description="The job number or invoice number the notes belong to")
+    quote: str = Field(min_length=1, max_length=300, description="The exact words in the notes that show the check applies")
+    reason: str = Field(min_length=1, max_length=200, description="One sentence on why those words match the check")
+
+
+class ReadingReply(BaseModel):
+    """What the model hands back after reading subjects' notes for one check."""
+
+    flagged: list[ReadingFlag]
+
+
+class CheckDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    words: str = Field(min_length=8, max_length=600, description="What to look for, in the person's own words")
+    subject: CheckSubject
+
+
+class CheckFinding(BaseModel):
+    """One thing a check would flag, shown before it is saved."""
+
+    subject: str
+    job_number: str | None
+    job_name: str | None
+    amount: Money
+    why: str
+
+
+class CheckDraftResponse(BaseModel):
+    approach: Literal["rule", "reading", "cannot"]
+    reason: str
+    rule: Rule | None
+    reads_as: str | None = Field(description="The rule in plain words, or what the assistant will read for")
+    would_flag: list[CheckFinding]
+
+
+class CheckCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str = Field(min_length=3, max_length=120)
+    words: str = Field(min_length=8, max_length=600)
+    subject: CheckSubject
+    approach: Literal["rule", "reading"]
+    rule: Rule | None = None
+    severity: Literal["high", "medium"] = "medium"
+    about: Literal["cash", "billing", "cost", "schedule", "ownership"]
+    actor: str = Field(min_length=1, max_length=120)
 
 
 # --- Commitments read from notes ------------------------------------------------

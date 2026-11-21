@@ -1,4 +1,4 @@
-import { Calculator, CalendarClock, FileClock, FileQuestionMark, Gauge, HandCoins, Hourglass, Scale, Send, UserX } from 'lucide-react'
+import { Calculator, CalendarClock, FileClock, FileQuestionMark, Flag, Gauge, HandCoins, Hourglass, Scale, Send, UserX } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Item } from './api'
 
@@ -44,6 +44,8 @@ export const KIND: Record<Item['kind'], { tone: Tone; icon: LucideIcon }> = {
   late_start: { tone: 'teal', icon: CalendarClock },
   stalled: { tone: 'teal', icon: Hourglass },
   no_ops_manager: { tone: 'slate', icon: UserX },
+  // Found by a check a person added.
+  flagged: { tone: 'amber', icon: Flag },
 }
 
 /** The colour of one tag on an item, by what the tag says. */

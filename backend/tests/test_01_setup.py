@@ -23,6 +23,7 @@ OUR_TABLES = {
     ("recon", "setting_change"),
     ("recon", "note_reading"),
     ("recon", "commitment"),
+    ("recon", "check_reading"),
     ("recon", "ask_exchange"),
     ("recon", "job_review"),
 }

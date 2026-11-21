@@ -125,6 +125,9 @@ def issue_type_response(issue_type: IssueType, open_count: int, open_amount: Dec
         tolerance_unit=issue_type.tolerance_unit,
         open_count=open_count,
         open_amount=open_amount,
+        origin=issue_type.origin or "built_in",
+        subject=issue_type.subject,
+        created_by=issue_type.created_by,
     )
 
 

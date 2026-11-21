@@ -240,8 +240,18 @@ class IssueType(Base):
     description: Mapped[str] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     tolerance: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
-    tolerance_unit: Mapped[str | None] = mapped_column(String(10))  # ratio | usd
+    tolerance_unit: Mapped[str | None] = mapped_column(String(10))  # ratio | usd | days
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # built_in: written in code (issues.py). rule: a person described it and the assistant
+    # turned it into a rule over fixed fields, which code runs on every sync. reading: the
+    # assistant reads notes for it, and every finding must quote the note it rests on.
+    origin: Mapped[str] = mapped_column(String(20), default="built_in", server_default="built_in")
+    # For a check a person added: what they asked for in their own words, what it looks at
+    # (job, customer_invoice or vendor_bill), the rule when it is one, and who added it.
+    instruction: Mapped[str | None] = mapped_column(Text)
+    subject: Mapped[str | None] = mapped_column(String(30))
+    rule: Mapped[dict | None] = mapped_column(JSONB)
+    created_by: Mapped[str | None] = mapped_column(String(120))
 
 
 class Issue(Base):
@@ -342,6 +352,27 @@ class Note(Base):
     source_pk: Mapped[str] = mapped_column(String(120))
     source_record_id: Mapped[int] = mapped_column(ForeignKey(f"{RAW}.source_record.id"))
     sync_run_id: Mapped[int] = mapped_column(ForeignKey(f"{RECON}.sync_run.id"))
+
+
+class CheckReading(Base):
+    """What the assistant decided when it read one subject's notes for one reading check,
+    and the text it read. Read again only when that text changes."""
+
+    __tablename__ = "check_reading"
+    __table_args__ = (
+        UniqueConstraint("type_key", "subject", name="uq_check_reading"),
+        {"schema": RECON},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    type_key: Mapped[str] = mapped_column(ForeignKey(f"{RECON}.issue_type.key", ondelete="CASCADE"), index=True)
+    # A job number or an invoice number, depending on what the check looks at
+    subject: Mapped[str] = mapped_column(String(60))
+    text_hash: Mapped[str] = mapped_column(String(64))
+    flagged: Mapped[bool] = mapped_column(Boolean)
+    quote: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class NoteReading(Base):

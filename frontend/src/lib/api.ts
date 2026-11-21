@@ -113,6 +113,7 @@ export interface Item {
     | 'stalled'
     | 'budget_risk'
     | 'no_ops_manager'
+    | 'flagged'
   title: string
   document: string | null
   company: string | null
@@ -248,6 +249,28 @@ export interface IssueType {
   tolerance_unit: 'ratio' | 'usd' | 'days' | null
   open_count: number
   open_amount: Money
+  /** built_in: written in code. rule: a person described it and it runs as a rule. reading: the assistant reads notes for it. */
+  origin: 'built_in' | 'rule' | 'reading'
+  subject: CheckSubject | null
+  created_by: string | null
+}
+
+export type CheckSubject = 'job' | 'customer_invoice' | 'vendor_bill'
+
+/** A check's test over fixed fields, as the backend validated it. Sent back unchanged when the check is added. */
+export interface Rule {
+  match: 'all' | 'any'
+  conditions: { field: string; op: string; value: number | string | boolean | null; other_field: string | null; times: number | null }[]
+  amount_field: string | null
+}
+
+/** How the assistant would run a described check, and what it would flag today. Nothing is saved yet. */
+export interface CheckDraft {
+  approach: 'rule' | 'reading' | 'cannot'
+  reason: string
+  rule: Rule | null
+  reads_as: string | null
+  would_flag: { subject: string; job_number: string | null; job_name: string | null; amount: Money; why: string }[]
 }
 
 export interface JobSummary {
@@ -650,6 +673,18 @@ export const api = {
     request<ListResponse<ActivityEntry>>(`/activity${query(params)}`),
 
   issueTypes: () => request<IssueType[]>('/issue-types'),
+  draftCheck: (body: { words: string; subject: CheckSubject }) => post<CheckDraft>('/checks/draft', body),
+  createCheck: (body: {
+    title: string
+    words: string
+    subject: CheckSubject
+    approach: 'rule' | 'reading'
+    rule: Rule | null
+    severity: 'high' | 'medium'
+    about: string
+    actor: string
+  }) => post<IssueType>('/checks', body),
+  runReadingChecks: () => post<{ notes_read: number }>('/checks/read'),
   updateIssueType: (key: string, body: { enabled?: boolean; tolerance?: string; actor: string }) =>
     request<IssueType>(`/issue-types/${key}`, { method: 'PATCH', body: JSON.stringify(body) }),
 

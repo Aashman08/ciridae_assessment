@@ -610,10 +610,19 @@ CHECKS = {
 
 
 async def detect(db: AsyncSession, run: SyncRun) -> list[Finding]:
-    """Run every enabled check. Each is one query that returns only its findings."""
+    """Run every enabled check: the built-in ones, and the ones people added. Each returns only its findings."""
+    # Checks people added run in the same pass and their findings are handled the same way.
+    from app.reading import from_readings
+    from app.rules import run_rule
+
     found: list[Finding] = []
     for issue_type in await db.scalars(select(IssueType).where(IssueType.enabled).order_by(IssueType.sort_order)):
-        found.extend(await CHECKS[issue_type.key](db, run, issue_type))
+        if issue_type.key in CHECKS:
+            found.extend(await CHECKS[issue_type.key](db, run, issue_type))
+        elif issue_type.origin == "rule":
+            found.extend(await run_rule(db, run, issue_type))
+        elif issue_type.origin == "reading":
+            found.extend(await from_readings(db, run, issue_type))
     return found
 
 
