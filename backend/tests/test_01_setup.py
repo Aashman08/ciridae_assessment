@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from app import database
+from app.core import database
 
 OUR_TABLES = {
     ("raw", "source_record"),

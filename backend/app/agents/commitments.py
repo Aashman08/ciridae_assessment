@@ -18,8 +18,8 @@ from datetime import date, timedelta
 
 from agents import Agent, Runner
 
-from app import assistant
-from app.schemas import CommitmentsReply
+from app.agents import assistant
+from app.core.schemas import CommitmentsReply
 
 logger = logging.getLogger(__name__)
 

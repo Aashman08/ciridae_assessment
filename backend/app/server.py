@@ -7,12 +7,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app import database
-from app.scheduler import sync_on_schedule
+from app.core import database
+from app.sync.scheduler import sync_on_schedule
 from app.endpoints import health_router, router
-from app.errors import APIError
-from app.exception_handlers import api_error_response
-from app.middleware import request_id_middleware
+from app.core.errors import APIError
+from app.core.exception_handlers import api_error_response
+from app.core.middleware import request_id_middleware
 
 # Our own messages (sync results, what each Ask question used) go to the terminal.
 logging.getLogger("app").setLevel(logging.INFO)

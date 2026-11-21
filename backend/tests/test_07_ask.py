@@ -13,9 +13,11 @@ from agents import ModelResponse, Usage
 from agents.models.interface import Model
 from openai.types.responses import ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
 
-from app import assistant, database
-from app.errors import AskFailedError, AskNotConfiguredError
-from app.schemas import AskRequest, IssueFilters
+from app.agents import assistant
+
+from app.core import database
+from app.core.errors import AskFailedError, AskNotConfiguredError
+from app.core.schemas import AskRequest, IssueFilters
 
 pytestmark = pytest.mark.usefixtures("synced")
 API = "/api/v1"
@@ -182,7 +184,7 @@ async def test_someone_who_sees_only_their_jobs_is_limited_whatever_the_model_as
 async def test_ask_knows_which_page_it_was_opened_from(recon, api, model):
     """Asked from a job's page, "this job" means that job. The page only points at
     records; what the person may see is still decided by the tools."""
-    from app.schemas import AskPage
+    from app.core.schemas import AskPage
 
     scripted = model(call("get_job", job_number="CTX00080002"), say("It has 4 open issues."))
     await recon.ask(AskRequest(question="What is wrong with this job?", page=AskPage(kind="job", job_number="CTX00080002")))
@@ -591,7 +593,7 @@ async def test_provider_problems_are_reported_as_what_they_are(recon, api, model
     import httpx
     from openai import AuthenticationError, RateLimitError
 
-    from app.errors import AskProviderError
+    from app.core.errors import AskProviderError
 
     def refusal(error_class, status, message):
         response = httpx.Response(status, request=httpx.Request("POST", "https://api.openai.com/v1/responses"))

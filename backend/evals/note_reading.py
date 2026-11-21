@@ -23,9 +23,9 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from app import commitments
+from app.agents import commitments
 from app.client import create_recon_client
-from app.models import Job, Note
+from app.core.models import Job, Note
 
 RESULTS = Path(__file__).parent / "note_reading_results.json"
 

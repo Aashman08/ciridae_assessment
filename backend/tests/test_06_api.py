@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import event
 
-from app import database
+from app.core import database
 
 pytestmark = pytest.mark.usefixtures("synced")
 API = "/api/v1"
@@ -546,7 +546,7 @@ async def test_contract_value_is_split_by_how_far_it_has_got(api):
 
 
 def test_a_stage_that_runs_ahead_never_goes_negative():
-    from app.financials import contract_stages
+    from app.sync.financials import contract_stages
 
     # Two jobs: one billed $20 ahead of what it earned, one with $15 earned and not billed.
     # The $15 stays unbilled; the job billed ahead does not cancel it.

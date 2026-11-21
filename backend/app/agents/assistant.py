@@ -28,10 +28,10 @@ from agents import (
 )
 from agents.models.interface import Model
 
-from app import database
-from app.errors import APIError, AskFailedError, IssueNotFoundError, JobNotFoundError
-from app.financials import CostBasis, RevenueBasis
-from app.schemas import (
+from app.core import database
+from app.core.errors import APIError, AskFailedError, IssueNotFoundError, JobNotFoundError
+from app.sync.financials import CostBasis, RevenueBasis
+from app.core.schemas import (
     AskAnswer,
     AskBlock,
     AskMessage,

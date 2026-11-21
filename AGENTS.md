@@ -3,36 +3,37 @@
 ## Project Structure & Module Organization
 
 The backend is a Python API using FastAPI, async SQLAlchemy 2 and PostgreSQL.
-Source lives in `backend/app/`:
+Source lives in `backend/app/`. Three files sit at the top; the rest is grouped in
+four packages.
 
 - `server.py` creates the FastAPI application and registers middleware, routes
   and exception handlers.
 - `endpoints.py` contains HTTP route definitions and nothing else. Every route
   opens a client with `async with` and awaits one method on it.
 - `client.py` contains every operation: running a sync, reading jobs and issues,
-  acting on issues. It owns the session and the transaction for one request.
-- `database.py` loads settings, creates both engines and the session factory, and
-  applies migrations at startup.
-- `models.py` contains SQLAlchemy persistence models.
-- `schemas.py` contains Pydantic request and response contracts.
-- `serializers.py` converts database models into API response models.
-- `connector.py` reads rows from the source systems.
-- `assistant.py` is Ask: the agent, its instructions and its fixed tools.
-- `items.py` groups issues into items, the things a person fixes, and holds the
-  fixed rules for what work fixes each kind. `review.py` is the agent that reviews a
-  job's items. Detection in `issues.py` is untouched; grouping happens on read.
-- `coding.py` is the bill coder, `drafts.py` is the follow-up drafter,
-  `commitments.py` reads notes for promises and waits, and `check_writer.py`,
-  `rules.py` and `reading.py` are the checks people add. Each is one agent with a typed
-  reply that our code checks before it is returned. Whether a commitment was kept is
-  worked out by code from the records, never by the model, and notes are read only
+  acting on issues, checks, notes and the audit log. It owns the session and the
+  transaction for one request.
+- `core/`: `database.py` (settings, both engines, the session factory, migrations at
+  startup), `models.py` (SQLAlchemy models), `schemas.py` (Pydantic contracts),
+  `serializers.py` (models to responses), and `errors.py`, `exception_handlers.py`
+  and `middleware.py` (application errors, error rendering, request IDs, the optional
+  API key check).
+- `sync/`: `connector.py` reads the source systems; `landing.py`, `normalize.py` and
+  `financials.py` are the first three steps of a sync; `scheduler.py` runs a sync
+  every `SYNC_EVERY_MINUTES`.
+- `checks/`: `issues.py` holds the built-in checks, the fourth step of a sync.
+  `rules.py` runs the rule checks people add, over a fixed list of fields, and
+  `reading.py` the reading checks. `items.py` groups issues into items, the things a
+  person fixes, and holds the fixed rules for what work fixes each kind.
+- `agents/`: every place a model does work, each one agent with a typed reply that
+  our code checks before it is used. `assistant.py` is Ask, with its fixed tools;
+  `review.py` reviews a job's items; `coding.py` suggests a job for a bill;
+  `drafts.py` drafts follow-ups; `commitments.py` reads notes for promises and waits;
+  `check_writer.py` turns a description into a check. Whether a commitment was kept
+  is worked out by code from the records, never by the model, and notes are read only
   when a person asks.
-- `scheduler.py` runs a sync every `SYNC_EVERY_MINUTES`.
-- `evals/` holds scripts that score an agent against known answers using the real model.
-- `landing.py`, `normalize.py`, `financials.py` and `issues.py` are the four steps
-  of a sync, in order.
-- `errors.py`, `exception_handlers.py` and `middleware.py` contain application
-  errors, HTTP error rendering, request IDs and the optional API key check.
+- `evals/` (beside `app/`) holds scripts that score an agent against known answers
+  using the real model.
 
 Migrations live in `backend/migrations/` and tests in `backend/tests/`.
 

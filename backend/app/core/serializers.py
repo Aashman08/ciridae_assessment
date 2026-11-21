@@ -3,7 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
-from app.financials import (
+from app.sync.financials import (
     COST_LABELS,
     REVENUE_LABELS,
     CostBasis,
@@ -13,8 +13,8 @@ from app.financials import (
     profit,
     revenue_for,
 )
-from app.models import AskExchange, Issue, IssueType, Job, JobFinancials, MoneyLine
-from app.schemas import (
+from app.core.models import AskExchange, Issue, IssueType, Job, JobFinancials, MoneyLine
+from app.core.schemas import (
     AskResponse,
     EventResponse,
     FigureOption,

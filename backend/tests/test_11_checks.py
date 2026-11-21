@@ -219,9 +219,9 @@ async def test_a_reading_check_on_bills_reads_the_email_each_came_on(api, model)
 async def test_every_field_the_writer_is_shown_runs_against_the_data(recon):
     """Each field of each kind of record compiles to SQL and runs, so no rule the assistant
     could write fails on a sync."""
-    from app.models import IssueType
-    from app.rules import FIELDS, NUMBERS, run_rule
-    from app.schemas import Rule
+    from app.core.models import IssueType
+    from app.checks.rules import FIELDS, NUMBERS, run_rule
+    from app.core.schemas import Rule
 
     run = await recon._current_run()
     for subject, fields in FIELDS.items():

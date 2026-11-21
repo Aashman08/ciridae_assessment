@@ -19,9 +19,9 @@ from typing import Any
 
 from agents import Agent, RunContextWrapper, Runner, function_tool
 
-from app import assistant
-from app.errors import AskFailedError, InvalidRequestError
-from app.schemas import AskStep, CodingReply, CodingResponse, CodingRunnerUp
+from app.agents import assistant
+from app.core.errors import AskFailedError, InvalidRequestError
+from app.core.schemas import AskStep, CodingReply, CodingResponse, CodingRunnerUp
 
 logger = logging.getLogger(__name__)
 

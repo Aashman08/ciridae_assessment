@@ -6,9 +6,9 @@ import pytest
 from sqlalchemy import func, select, text
 
 from app.client import create_recon_client
-from app.connector import SYSTEM_BY_TABLE
-from app.landing import content_hash
-from app.models import SourceRecord, SyncRun
+from app.sync.connector import SYSTEM_BY_TABLE
+from app.sync.landing import content_hash
+from app.core.models import SourceRecord, SyncRun
 
 
 async def source_row_count(source) -> int:

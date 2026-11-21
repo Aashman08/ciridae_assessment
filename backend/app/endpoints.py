@@ -5,9 +5,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.client import create_recon_client
-from app.financials import CostBasis, RevenueBasis
-from app.middleware import require_api_key
-from app.schemas import (
+from app.sync.financials import CostBasis, RevenueBasis
+from app.core.middleware import require_api_key
+from app.core.schemas import (
     ActivityEntry,
     ActivityFilters,
     CheckCreate,

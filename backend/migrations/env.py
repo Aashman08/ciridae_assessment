@@ -3,8 +3,8 @@
 from alembic import context
 from sqlalchemy import create_engine, text
 
-from app.database import settings
-from app.models import RAW, RECON, Base
+from app.core.database import settings
+from app.core.models import RAW, RECON, Base
 
 target_metadata = Base.metadata
 

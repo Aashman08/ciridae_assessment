@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.client import create_recon_client
-from app.models import MoneyLine
+from app.core.models import MoneyLine
 
 RESULTS = Path(__file__).parent / "bill_coding_results.json"
 

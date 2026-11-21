@@ -6,7 +6,7 @@ from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, model_validator
 
-from app.financials import CostBasis, RevenueBasis
+from app.sync.financials import CostBasis, RevenueBasis
 
 CENT = Decimal("0.01")
 

@@ -11,7 +11,7 @@ from enum import StrEnum
 from sqlalchemy import and_, func, insert, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Job, JobFinancials, MoneyLine, SyncRun
+from app.core.models import Job, JobFinancials, MoneyLine, SyncRun
 
 ZERO = Decimal(0)
 

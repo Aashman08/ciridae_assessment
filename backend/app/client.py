@@ -23,10 +23,14 @@ import re
 from agents.exceptions import AgentsException
 from openai import APIStatusError, AuthenticationError, OpenAIError, RateLimitError
 
-from app import assistant, check_writer, coding, commitments, database, drafts, reading, review, rules
-from app.coding import CodingCase
-from app.connector import Connector, ExportConnector
-from app.errors import (
+from app.agents import assistant, check_writer, coding, commitments, drafts, review
+
+from app.core import database
+
+from app.checks import reading, rules
+from app.agents.coding import CodingCase
+from app.sync.connector import Connector, ExportConnector
+from app.core.errors import (
     CommitmentNotFoundError,
     AskFailedError,
     AskNotConfiguredError,
@@ -41,7 +45,7 @@ from app.errors import (
     SourceRecordNotFoundError,
     SyncRunNotFoundError,
 )
-from app.financials import (
+from app.sync.financials import (
     LEDGER_MARGIN,
     LEDGER_PROFIT,
     UNBILLED,
@@ -53,10 +57,10 @@ from app.financials import (
     margin_pct,
     share_pct,
 )
-from app.issues import DOCUMENT_TYPES, FINANCE_QUEUE, UNSENT_STATUSES, apply_action, find_issues
-from app.items import DOCUMENT_KINDS, SCHEDULE_KINDS, TITLES, build_items, fingerprint, group_by_job, kind_of, what_to_ask, with_whom, working_days_from
-from app.landing import land
-from app.models import (
+from app.checks.issues import DOCUMENT_TYPES, FINANCE_QUEUE, UNSENT_STATUSES, apply_action, find_issues
+from app.checks.items import DOCUMENT_KINDS, SCHEDULE_KINDS, TITLES, build_items, fingerprint, group_by_job, kind_of, what_to_ask, with_whom, working_days_from
+from app.sync.landing import land
+from app.core.models import (
     AskExchange,
     Company,
     Issue,
@@ -76,8 +80,8 @@ from app.models import (
     SourceRecord,
     SyncRun,
 )
-from app.normalize import normalize, person_name
-from app.schemas import (
+from app.sync.normalize import normalize, person_name
+from app.core.schemas import (
     ActivityChange,
     ActivityEntry,
     ActivityFilters,
@@ -145,7 +149,7 @@ from app.schemas import (
     SummaryResponse,
     SyncRunResponse,
 )
-from app.serializers import (
+from app.core.serializers import (
     ask_response,
     issue_detail_response,
     issue_response,

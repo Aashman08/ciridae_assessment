@@ -18,10 +18,10 @@ from datetime import date, timedelta
 
 from agents import Agent, Runner
 
-from app import assistant
-from app.errors import AskFailedError
-from app.items import working_days_from
-from app.schemas import ItemAction, ItemResponse, JobSuggestion, ReviewReply, Suggestion
+from app.agents import assistant
+from app.core.errors import AskFailedError
+from app.checks.items import working_days_from
+from app.core.schemas import ItemAction, ItemResponse, JobSuggestion, ReviewReply, Suggestion
 
 logger = logging.getLogger(__name__)
 

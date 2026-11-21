@@ -23,10 +23,10 @@ from agents import Agent, Runner
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import assistant
-from app.issues import OWNER, Finding, line
-from app.models import CheckReading, IssueType, Job, Note, SyncRun
-from app.schemas import ReadingReply
+from app.agents import assistant
+from app.checks.issues import OWNER, Finding, line
+from app.core.models import CheckReading, IssueType, Job, Note, SyncRun
+from app.core.schemas import ReadingReply
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +58,8 @@ async def texts(db: AsyncSession, subject: str, run: SyncRun | None = None) -> d
     """What there is to read about each record of this kind, as one block of text each:
     notes for jobs, invoices and customers; the email a bill came on and what its lines say
     for bills and vendors."""
-    from app.models import Company
-    from app.rules import EMAIL_SUBJECT, _lines_text
+    from app.core.models import Company
+    from app.checks.rules import EMAIL_SUBJECT, _lines_text
 
     by: dict[str, list[str]] = defaultdict(list)
     if subject in ("job", "customer_invoice", "customer"):
@@ -158,7 +158,7 @@ async def from_readings(
             for r in await db.execute(select(Job.id.label("job_id"), Job.job_number, OWNER).where(Job.job_number.in_(subjects)))
         }
     else:
-        from app.models import Company
+        from app.core.models import Company
 
         rows = {name: None for name in await db.scalars(select(Company.name).where(Company.name.in_(subjects)))}
     for reading in readings:

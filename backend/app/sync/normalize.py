@@ -15,7 +15,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Company, CostCodeMap, Job, JobOwner, MoneyLine, Note, SourceRecord, SyncRun
+from app.core.models import Company, CostCodeMap, Job, JobOwner, MoneyLine, Note, SourceRecord, SyncRun
 
 OWNER_ROLES = {"Primary Ops Manager": "ops_manager", "Primary AE": "account_executive"}
 

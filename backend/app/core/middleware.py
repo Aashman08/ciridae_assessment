@@ -6,8 +6,8 @@ from typing import Annotated
 
 from fastapi import Header, Request, Response
 
-from app.database import settings
-from app.errors import UnauthorizedError
+from app.core.database import settings
+from app.core.errors import UnauthorizedError
 
 REQUEST_ID_HEADER = "X-Request-ID"
 

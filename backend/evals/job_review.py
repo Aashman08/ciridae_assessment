@@ -26,10 +26,10 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from app import review
+from app.agents import review
 from app.client import ITEM_PARTS, create_recon_client
-from app.items import fingerprint
-from app.models import Issue, Job
+from app.checks.items import fingerprint
+from app.core.models import Issue, Job
 
 RESULTS = Path(__file__).parent / "job_review_results.json"
 

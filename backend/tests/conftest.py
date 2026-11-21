@@ -31,9 +31,9 @@ import pytest_asyncio  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine  # noqa: E402
 
-from app import database  # noqa: E402
+from app.core import database  # noqa: E402
 from app.client import ReconClient, create_recon_client  # noqa: E402
-from app.schemas import SyncRunResponse  # noqa: E402
+from app.core.schemas import SyncRunResponse  # noqa: E402
 from app.server import app  # noqa: E402
 
 DUMP = Path(__file__).resolve().parents[2] / "source_data.sql"

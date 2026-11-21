@@ -11,8 +11,8 @@ import json
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.connector import SYSTEM_BY_TABLE, Connector
-from app.models import SourceRecord, SyncRun
+from app.sync.connector import SYSTEM_BY_TABLE, Connector
+from app.core.models import SourceRecord, SyncRun
 
 
 def content_hash(payload: dict) -> str:

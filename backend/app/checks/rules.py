@@ -22,13 +22,13 @@ from sqlalchemy import Date, Integer, Numeric, and_, cast, distinct, exists, fun
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.errors import InvalidRequestError
-from app.financials import LEDGER_MARGIN, LEDGER_PROFIT
-from app.issues import (
+from app.core.errors import InvalidRequestError
+from app.sync.financials import LEDGER_MARGIN, LEDGER_PROFIT
+from app.checks.issues import (
     ACCOUNT_EXECUTIVE, FINANCE_QUEUE, OPS_MANAGER, OWNER, VENDOR_NAME, Finding, customer, fin, line, money, vendor,
 )
-from app.models import Company, Issue, IssueType, Job, MoneyLine, Note, SourceRecord, SyncRun
-from app.schemas import Rule, RuleCondition
+from app.core.models import Company, Issue, IssueType, Job, MoneyLine, Note, SourceRecord, SyncRun
+from app.core.schemas import Rule, RuleCondition
 
 NUMBERS = ("money", "number", "days", "percent")
 TEXT_OPS = ("=", "!=", "contains", "does_not_contain")

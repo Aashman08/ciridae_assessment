@@ -14,8 +14,8 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
-from app.models import Issue, Job
-from app.schemas import (
+from app.core.models import Issue, Job
+from app.core.schemas import (
     EventResponse,
     ItemAction,
     ItemResponse,
@@ -24,7 +24,7 @@ from app.schemas import (
     JobSuggestion,
     Suggestion,
 )
-from app.serializers import _owner_role, line_response, owner_name
+from app.core.serializers import _owner_role, line_response, owner_name
 
 ACTIVE = ("open", "assigned")
 

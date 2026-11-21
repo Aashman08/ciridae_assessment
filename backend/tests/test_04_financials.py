@@ -6,9 +6,9 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import event, func, select
 
-from app import database
-from app.financials import CostBasis, RevenueBasis, latest_run_id, margin_pct, profit
-from app.models import Job, JobFinancials
+from app.core import database
+from app.sync.financials import CostBasis, RevenueBasis, latest_run_id, margin_pct, profit
+from app.core.models import Job, JobFinancials
 
 pytestmark = pytest.mark.usefixtures("synced")
 D = Decimal

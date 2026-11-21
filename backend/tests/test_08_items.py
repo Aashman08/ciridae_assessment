@@ -9,7 +9,7 @@ from openai.types.responses import ResponseOutputMessage, ResponseOutputText
 from sqlalchemy import text
 from test_07_ask import ScriptedModel, model  # noqa: F401  (the scripted stand-in for the model)
 
-from app.items import working_days_from
+from app.checks.items import working_days_from
 
 pytestmark = pytest.mark.usefixtures("synced")
 API = "/api/v1"
@@ -380,8 +380,8 @@ async def test_urgent_jobs_follow_a_stated_rule_and_get_a_one_day_tolerance(api,
         "where job_number = 'BTX00040001'"
     ))
     await db.commit()
-    from app.issues import detect
-    from app.models import SyncRun
+    from app.checks.issues import detect
+    from app.core.models import SyncRun
     from sqlalchemy import select as sql_select
 
     run = await db.scalar(sql_select(SyncRun).order_by(SyncRun.id.desc()).limit(1))

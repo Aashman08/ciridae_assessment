@@ -13,8 +13,8 @@ from typing import Any
 
 from agents import Agent, Runner
 
-from app import assistant
-from app.schemas import DraftReply, DraftResponse, Recipient
+from app.agents import assistant
+from app.core.schemas import DraftReply, DraftResponse, Recipient
 
 logger = logging.getLogger(__name__)
 

@@ -12,9 +12,9 @@ import logging
 
 from agents import Agent, Runner
 
-from app import assistant
-from app.rules import FIELDS, catalogue
-from app.schemas import CheckDraftReply
+from app.agents import assistant
+from app.checks.rules import FIELDS, catalogue
+from app.core.schemas import CheckDraftReply
 
 logger = logging.getLogger(__name__)
 

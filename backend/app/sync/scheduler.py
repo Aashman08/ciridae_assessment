@@ -6,9 +6,9 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from app import database
+from app.core import database
 from app.client import create_recon_client
-from app.models import SyncRun
+from app.core.models import SyncRun
 
 logger = logging.getLogger(__name__)
 

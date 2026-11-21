@@ -5,8 +5,8 @@ import logging
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from app.errors import APIError
-from app.middleware import REQUEST_ID_HEADER
+from app.core.errors import APIError
+from app.core.middleware import REQUEST_ID_HEADER
 
 logger = logging.getLogger(__name__)
 

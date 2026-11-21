@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import selectinload
 
-from app.models import Company, CostCodeMap, Job, JobOwner, MoneyLine, SourceRecord
+from app.core.models import Company, CostCodeMap, Job, JobOwner, MoneyLine, SourceRecord
 
 pytestmark = pytest.mark.usefixtures("synced")
 D = Decimal

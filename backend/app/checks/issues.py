@@ -15,8 +15,8 @@ from sqlalchemy.dialects.postgresql import aggregate_order_by, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.errors import InvalidRequestError, InvalidStateError
-from app.models import (
+from app.core.errors import InvalidRequestError, InvalidStateError
+from app.core.models import (
     Company,
     Issue,
     IssueEvent,
@@ -612,8 +612,8 @@ CHECKS = {
 async def detect(db: AsyncSession, run: SyncRun) -> list[Finding]:
     """Run every enabled check: the built-in ones, and the ones people added. Each returns only its findings."""
     # Checks people added run in the same pass and their findings are handled the same way.
-    from app.reading import from_readings
-    from app.rules import run_rule
+    from app.checks.reading import from_readings
+    from app.checks.rules import run_rule
 
     found: list[Finding] = []
     for issue_type in await db.scalars(select(IssueType).where(IssueType.enabled).order_by(IssueType.sort_order)):
