@@ -21,9 +21,9 @@ logging.basicConfig(format="%(levelname)s:     %(name)s: %(message)s")
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-    """Migrate, update the built-in checks, then keep the figures current on a schedule until shutdown."""
+    """Migrate, add any missing built-in check, then keep the figures current on a schedule until shutdown."""
     async with database.lifespan(application):
-        # The built-in checks' wording comes from code, so bring it up to date on every start.
+        # A new database gets the built-in checks; an existing one keeps its own.
         async with database.SessionLocal() as db:
             await ensure_issue_types(db)
             await db.commit()

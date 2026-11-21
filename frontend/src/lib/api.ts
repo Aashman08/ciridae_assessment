@@ -701,7 +701,10 @@ export const api = {
     actor: string
   }) => post<IssueType>('/checks', body),
   runReadingChecks: () => post<{ notes_read: number }>('/checks/read'),
-  updateIssueType: (key: string, body: { enabled?: boolean; tolerance?: string; severity?: 'high' | 'medium'; actor: string }) =>
+  updateIssueType: (
+    key: string,
+    body: { enabled?: boolean; tolerance?: string; severity?: 'high' | 'medium'; title?: string; description?: string; actor: string },
+  ) =>
     request<IssueType>(`/issue-types/${key}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   latestSync: () => request<ListResponse<SyncRun>>('/sync-runs?limit=1'),

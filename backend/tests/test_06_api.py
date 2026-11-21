@@ -617,23 +617,34 @@ async def test_the_finance_view_ties_to_the_ledger_and_the_summary(api, db):
     assert sum(Decimal(k["profit"]) for k in kinds) == Decimal(finance["profit"])
 
 
-async def test_code_owns_a_checks_wording_and_people_own_its_settings(api, db):
-    """A check's title and description come from code on every start; its on/off switch,
-    tolerance and severity are whatever people last set, and a restart keeps them."""
-    from app.checks.issues import DEFINITIONS, ensure_issue_types
+async def test_checks_live_in_the_database_and_people_edit_all_of_them(api, db):
+    """checks.toml only fills a new database. Once a check exists, its name, description,
+    severity, tolerance and switch are what people set, and a restart keeps every edit."""
+    from app.checks.issues import ensure_issue_types
 
-    await api.patch(f"{API}/issue-types/cost_disagree", json={"tolerance": "0.05", "severity": "high", "enabled": False, "actor": "Rachel Kim"})
-    # A database left behind by an older version of the code, with old wording.
-    await db.execute(text("update recon.issue_type set title = 'Old name', description = 'Old words' where key = 'cost_disagree'"))
-    await db.commit()
-
+    edited = await api.patch(f"{API}/issue-types/cost_disagree", json={
+        "title": "Cost does not match", "description": "Project and ledger cost differ by more than the tolerance.",
+        "tolerance": "0.05", "severity": "high", "enabled": False, "actor": "Rachel Kim",
+    })
+    assert edited.status_code == 200, edited.text
     await ensure_issue_types(db)
     await db.commit()
     row = (await db.execute(text("select title, description, tolerance, severity, enabled from recon.issue_type where key = 'cost_disagree'"))).one()
-    assert (row.title, row.description) == (DEFINITIONS["cost_disagree"].title, DEFINITIONS["cost_disagree"].description)
-    assert (row.tolerance, row.severity, row.enabled) == (Decimal("0.05"), "high", False)
+    assert (row.title, row.tolerance, row.severity, row.enabled) == ("Cost does not match", Decimal("0.05"), "high", False)
+
+    # A missing built-in check comes back from the file.
+    await db.execute(text("delete from recon.issue_type where key = 'discount' and not exists (select 1 from recon.issue where type_key = 'discount')"))
+    await db.commit()
+    await ensure_issue_types(db)
+    await db.commit()
+    assert await db.scalar(text("select count(*) from recon.issue_type where key = 'discount'")) == 1
 
     log = (await get(api, "/activity", kind="setting_changed", person="Rachel Kim"))["data"]
-    assert {"Changed severity", "Changed tolerance", "Switched a check off"} <= {e["action"] for e in log}
+    assert {"Renamed a check", "Changed a description", "Changed severity", "Changed tolerance", "Switched a check off"} <= {e["action"] for e in log}
+    renamed = next(e for e in log if e["action"] == "Renamed a check")
+    assert renamed["changes"] == [{"field": "Name", "before": "Ops and ledger cost disagree", "after": "Cost does not match"}]
 
-    await api.patch(f"{API}/issue-types/cost_disagree", json={"tolerance": "0.02", "severity": "medium", "enabled": True, "actor": "Rachel Kim"})
+    await api.patch(f"{API}/issue-types/cost_disagree", json={
+        "title": "Ops and ledger cost disagree", "description": "The project team's cost total and the ledger's differ by more than the tolerance.",
+        "tolerance": "0.02", "severity": "medium", "enabled": True, "actor": "Rachel Kim",
+    })

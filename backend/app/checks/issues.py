@@ -43,12 +43,11 @@ POSTED_STATUSES = ("POSTED", "POSTING_FAILED")
 
 @dataclass(frozen=True)
 class CheckDefinition:
-    """What a built-in check is, as written in checks.toml.
+    """A built-in check's starting definition, as written in checks.toml.
 
-    The fields split by who owns them. Code owns what describes the logic (title,
-    description, area, unit): a change in checks.toml reaches the database on the next
-    start. People own the settings (on or off, tolerance, severity): checks.toml only
-    seeds them for a new database, and after that only the Checks screen changes them."""
+    The database is where checks live. This only fills a new database: once a check's
+    row exists, people edit its title, description, severity, tolerance and switch on the
+    Checks screen, and nothing here overwrites them."""
 
     key: str
     title: str
@@ -95,8 +94,8 @@ def check(key: str):
 
 
 async def ensure_issue_types(db: AsyncSession) -> None:
-    """Add any built-in check that is missing, and bring the fields code owns up to date
-    on the ones already there. Settings people own are never overwritten."""
+    """Add any built-in check whose row is missing. An existing row is never changed:
+    after the first start the database, and the people editing it, own every check."""
     rows = [
         {
             "key": d.key, "title": d.title, "severity": d.severity, "about": d.about, "tolerance": d.tolerance,
@@ -104,16 +103,7 @@ async def ensure_issue_types(db: AsyncSession) -> None:
         }
         for d in sorted(DEFINITIONS.values(), key=lambda d: d.order)
     ]
-    statement = insert(IssueType).values(rows)
-    owned_by_code = ("title", "description", "about", "tolerance_unit", "sort_order")
-    await db.execute(
-        statement.on_conflict_do_update(
-            index_elements=["key"],
-            set_={column: statement.excluded[column] for column in owned_by_code},
-            # Only built-in checks: a check a person added is theirs entirely.
-            where=IssueType.origin == "built_in",
-        )
-    )
+    await db.execute(insert(IssueType).values(rows).on_conflict_do_nothing(index_elements=["key"]))
     await db.flush()
 
 

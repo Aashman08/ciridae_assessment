@@ -1,9 +1,10 @@
-# The built-in checks. Each block defines one check; its logic is the function of the
-# same name in issues.py, marked @check("<key>"). A test fails if the two ever disagree.
+# The built-in checks, as a new database starts with them. Each block's logic is the
+# function of the same name in issues.py, marked @check("<key>"); a test fails if the
+# two disagree.
 #
-# Code owns title, description, about and unit: they update on every start.
-# People own severity, tolerance and on/off: the values here only seed a new database,
-# and after that the Checks screen changes them.
+# This file only fills an empty database. After that, checks live in the database and
+# are edited on the Checks screen: title, description, severity, tolerance and on/off.
+# Nothing here overwrites an existing check.
 #
 # about: cash | billing | cost | schedule | ownership
 # unit:  ratio (0.02 is 2%) | usd | days

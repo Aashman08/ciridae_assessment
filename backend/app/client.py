@@ -236,6 +236,7 @@ def audit_action(kind: str, by: str, text: str | None, source: str, changes: lis
             ("Added this check", "Added a check"), ("Switched on", "Switched a check on"),
             ("Switched off", "Switched a check off"), ("Tolerance changed", "Changed tolerance"),
             ("Severity changed", "Changed severity"),
+            ("Renamed from", "Renamed a check"), ("Description changed", "Changed a description"),
         ):
             if text.startswith(start):
                 return said
@@ -762,6 +763,14 @@ class ReconClient:
                 {"field": "Check", "before": "on" if issue_type.enabled else "off", "after": "on" if payload.enabled else "off"},
             ))
             issue_type.enabled = payload.enabled
+        if payload.title is not None and payload.title.strip() != issue_type.title:
+            title = payload.title.strip()
+            changes.append((f"Renamed from {issue_type.title} to {title}", {"field": "Name", "before": issue_type.title, "after": title}))
+            issue_type.title = title
+        if payload.description is not None and payload.description.strip() != issue_type.description:
+            words = payload.description.strip()
+            changes.append(("Description changed", {"field": "Description", "before": issue_type.description, "after": words}))
+            issue_type.description = words
         if payload.severity is not None and payload.severity != issue_type.severity:
             changes.append((
                 f"Severity changed from {issue_type.severity} to {payload.severity}",

@@ -27,7 +27,7 @@ reply before anyone sees it. Details are in [backend/app/agents](backend/app/age
 
 ### How it is tested
 
-- **Tests** (157) do not call OpenAI. They swap the model for a fake one that returns
+- **Tests** (159) do not call OpenAI. They swap the model for a fake one that returns
   answers I wrote in advance, and check that my code handles each answer correctly.
   They test my code, not the model's judgement, so they need no key and cost nothing.
 - **Evals** score three agents against answers written by hand, with the real model.

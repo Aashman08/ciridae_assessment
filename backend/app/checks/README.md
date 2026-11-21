@@ -11,15 +11,17 @@
 All three kinds of check run in the same step of a sync and produce issues the same
 way. A sync never calls a model.
 
-The built-in checks are defined in [`checks.toml`](checks.toml): one block per check with its
-title, description, area, default severity and default tolerance. Each block's logic is the
-function of the same name in `issues.py`, marked `@check("<key>")`. The app loads the file at
-startup and matches each block to its function. A test fails if a block has no function, a
-function has no block, or a block is incomplete.
+Every check is a row in the `issue_type` table. The database owns it, and people change it
+on the Checks screen (or `PATCH /issue-types/{key}`):
 
-To add a check: add a block to `checks.toml`, then write its function with `@check("<key>")`.
+- **Edit** a check's name, description, severity or tolerance, or switch it on or off.
+- **Add** a check in one sentence. The check writer turns it into a rule or a reading
+  check, and saving it creates a new row.
 
-| Field | Owned by | What happens |
-| --- | --- | --- |
-| Title, description, area, unit, order | `checks.toml` | Updated from the file on every start and every sync |
-| On or off, tolerance, severity | People | Set from the file only for a new database; after that, only the Checks screen or `PATCH /issue-types/{key}` changes them, and each change goes in the audit log |
+Each change goes in the audit log.
+
+[`checks.toml`](checks.toml) only seeds a new database with the 17 built-in checks. At
+startup the app inserts a built-in check that is missing and never overwrites a row that
+exists, so an edit made on the Checks screen stays. Each built-in check's logic is the
+function of the same name in `issues.py`, marked `@check("<key>")`. A test fails if a block
+has no function, a function has no block, or a block is incomplete.
