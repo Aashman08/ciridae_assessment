@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { ActivityTable } from '../components/ActivityTable'
 import { CommitmentTable, ReadNotesButton } from '../components/Commitments'
 import { NextSteps } from '../components/NextSteps'
@@ -9,7 +9,6 @@ import { api } from '../lib/api'
 import type { CostBasis, FigureOption, JobDetail as Job, Line, RevenueBasis } from '../lib/api'
 import { useAssistant } from '../lib/assistant'
 import { money, percent, shortDate, stage, words } from '../lib/format'
-import { buttonClass } from '../lib/styles'
 
 interface FigurePickerProps<Basis extends string> {
   title: string
@@ -210,27 +209,24 @@ function JobCommitments({ jobNumber }: { jobNumber: string }) {
   )
 }
 
-const ACTIVITY_SHOWN = 50
+const NOTES_SHOWN = 50
 
 /**
- * Everything written about the job and done on it, in one list: notes from the project
- * system and accounting, updates logged here, and what happened to each of its issues.
+ * What people wrote about the job in the source systems: notes in the project system and
+ * on its invoices in accounting, newest first. Actions taken in this app are not notes;
+ * they are in the audit log.
  */
-function JobActivity({ jobNumber }: { jobNumber: string }) {
-  const activity = useQuery({
-    queryKey: ['activity', 'job', jobNumber],
-    queryFn: () => api.activity({ job: jobNumber, limit: ACTIVITY_SHOWN }),
+function JobNotes({ jobNumber }: { jobNumber: string }) {
+  const notes = useQuery({
+    queryKey: ['activity', 'job-notes', jobNumber],
+    queryFn: () => api.activity({ job: jobNumber, kind: 'note', limit: NOTES_SHOWN }),
   })
   return (
     <Card>
-      <CardHead title="Notes and activity">
-        {activity.data && activity.data.total > ACTIVITY_SHOWN && (
-          <Link to={`/activity?job=${jobNumber}`} className={buttonClass()}>
-            All {activity.data.total}
-          </Link>
-        )}
-      </CardHead>
-      <Loaded query={activity}>{(page) => <ActivityTable entries={page.data} empty="Nothing written or done on this job yet" />}</Loaded>
+      <CardHead title="Notes" />
+      <Loaded query={notes}>
+        {(page) => <ActivityTable entries={page.data} showCheck={false} empty="Nobody has written a note on this job yet" />}
+      </Loaded>
     </Card>
   )
 }
@@ -282,7 +278,7 @@ export function JobDetail() {
 
           <JobCommitments jobNumber={data.job_number} />
 
-          <JobActivity jobNumber={data.job_number} />
+          <JobNotes jobNumber={data.job_number} />
         </>
       )}
     </Loaded>

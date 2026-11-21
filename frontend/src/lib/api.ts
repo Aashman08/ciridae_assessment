@@ -245,7 +245,7 @@ export interface IssueType {
   description: string
   enabled: boolean
   tolerance: string | null
-  tolerance_unit: 'ratio' | 'usd' | null
+  tolerance_unit: 'ratio' | 'usd' | 'days' | null
   open_count: number
   open_amount: Money
 }

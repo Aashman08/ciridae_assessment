@@ -27,7 +27,7 @@ const LISTS: Record<string, AskPage['kind']> = {
   issues: 'issues',
   invoices: 'invoices',
   bills: 'bills',
-  'issue-types': 'issue_types',
+  checks: 'issue_types',
 }
 
 // The filters worth telling the assistant about. Paging and sorting are not.

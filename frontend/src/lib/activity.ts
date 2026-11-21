@@ -1,13 +1,6 @@
 import type { ActivitySource, CommitmentKind, CommitmentState } from './api'
 import type { Tone } from './tones'
 
-/** Where an entry came from, as people call those systems. */
-export const SOURCES: Record<ActivitySource, string> = {
-  project: 'Project system',
-  accounting: 'Accounting',
-  app: 'This app',
-}
-
 /** What happened, in a word or two. */
 export const KINDS: Record<string, string> = {
   note: 'Note',

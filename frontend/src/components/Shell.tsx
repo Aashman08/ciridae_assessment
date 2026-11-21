@@ -36,6 +36,7 @@ interface Section {
 }
 
 const CONNECTORS: Section = { to: '/connectors', label: 'Connectors', icon: Plug }
+const CHECKS: Section = { to: '/checks', label: 'Checks', icon: ListChecks, managesChecks: true }
 
 const SECTIONS: Section[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard },
@@ -44,8 +45,7 @@ const SECTIONS: Section[] = [
   { to: '/issues', label: 'Issues', icon: TriangleAlert },
   { to: '/invoices', label: 'Customer invoices', icon: Receipt },
   { to: '/bills', label: 'Vendor bills', icon: FileText },
-  { to: '/activity', label: 'Activity', icon: History },
-  { to: '/issue-types', label: 'Issue types', icon: ListChecks, managesChecks: true },
+  { to: '/audit-log', label: 'Audit log', icon: History },
 ]
 
 // One icon size and stroke everywhere, in the colour of the text around it.
@@ -202,8 +202,20 @@ function Sidebar() {
         ))}
       </nav>
 
-      {/* Settings sit at the bottom, in the same rows as the pages above them. */}
+      {/* Settings sit at the bottom under their own heading, in the same rows as the pages above them. */}
       <div className="mt-auto flex gap-1 pt-3 md:flex-col md:gap-0.5 md:pt-6">
+        <p className="hidden px-2 pb-2 text-xs leading-4 text-muted md:block">Settings</p>
+        {viewer.managesChecks && (
+          <NavLink to={CHECKS.to} className={({ isActive }) => `${ROW} ${isActive ? ROW_ACTIVE : ''}`}>
+            {({ isActive }) => (
+              <>
+                <ListChecks {...ICON} className={isActive ? 'text-brand' : 'text-muted'} />
+                <span className="truncate">Checks</span>
+                <span />
+              </>
+            )}
+          </NavLink>
+        )}
         <NavLink to="/connectors" className={({ isActive }) => `${ROW} ${isActive ? ROW_ACTIVE : ''}`}>
           {({ isActive }) => (
             <>
@@ -226,7 +238,7 @@ function Sidebar() {
 function Crumb() {
   const { pathname } = useLocation()
   const [, first, second] = pathname.split('/')
-  const section = [...SECTIONS, CONNECTORS].find((s) => s.to === `/${first}`) ?? SECTIONS[0]
+  const section = [...SECTIONS, CHECKS, CONNECTORS].find((s) => s.to === `/${first}`) ?? SECTIONS[0]
   const Icon = section.icon
   return (
     <div className="flex min-w-0 items-center gap-2 text-ink-2">

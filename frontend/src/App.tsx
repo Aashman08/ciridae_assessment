@@ -39,8 +39,11 @@ export function App() {
         <Route path="issues/:issueId" element={<IssueRedirect />} />
         <Route path="invoices" element={<Lines key="invoices" kind="customer_invoice" />} />
         <Route path="bills" element={<Lines key="bills" kind="vendor_bill" />} />
-        <Route path="activity" element={<Activity />} />
-        <Route path="issue-types" element={<IssueTypes />} />
+        <Route path="audit-log" element={<Activity />} />
+        {/* The page was called Activity at first; old links still land on it. */}
+        <Route path="activity" element={<Navigate to="/audit-log" replace />} />
+        <Route path="checks" element={<IssueTypes />} />
+        <Route path="issue-types" element={<Navigate to="/checks" replace />} />
         <Route path="connectors" element={<Connectors />} />
         <Route path="*" element={<Empty>There is no page at this address</Empty>} />
       </Route>

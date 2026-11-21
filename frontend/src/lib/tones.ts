@@ -1,4 +1,4 @@
-import { CalendarClock, FileText, Receipt, Scale, UserX } from 'lucide-react'
+import { Calculator, CalendarClock, FileClock, FileQuestionMark, Gauge, HandCoins, Hourglass, Scale, Send, UserX } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Item } from './api'
 
@@ -28,17 +28,21 @@ export const TONE: Record<Tone, string> = {
   slate: 'bg-tint-slate text-tint-slate-ink',
 }
 
-/** What each kind of item is about, as a colour and an icon. */
+/**
+ * What each kind of item is about. The colour says which part of the business (blue
+ * customer money, violet vendors, pink cost, teal schedule, slate ownership); the icon
+ * says which problem it is, so no two kinds look alike.
+ */
 export const KIND: Record<Item['kind'], { tone: Tone; icon: LucideIcon }> = {
-  invoice_unpaid: { tone: 'blue', icon: Receipt },
-  invoice_not_sent: { tone: 'blue', icon: Receipt },
+  invoice_unpaid: { tone: 'blue', icon: HandCoins },
+  invoice_not_sent: { tone: 'blue', icon: Send },
   billing_gap: { tone: 'blue', icon: Scale },
-  bill_stuck: { tone: 'violet', icon: FileText },
-  bill_no_job: { tone: 'violet', icon: FileText },
-  cost_gap: { tone: 'pink', icon: Scale },
-  budget_risk: { tone: 'pink', icon: Scale },
+  bill_stuck: { tone: 'violet', icon: FileClock },
+  bill_no_job: { tone: 'violet', icon: FileQuestionMark },
+  cost_gap: { tone: 'pink', icon: Calculator },
+  budget_risk: { tone: 'pink', icon: Gauge },
   late_start: { tone: 'teal', icon: CalendarClock },
-  stalled: { tone: 'teal', icon: CalendarClock },
+  stalled: { tone: 'teal', icon: Hourglass },
   no_ops_manager: { tone: 'slate', icon: UserX },
 }
 

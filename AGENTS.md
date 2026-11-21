@@ -78,7 +78,7 @@ Run from `frontend/`:
 - Every size and gap is a multiple of 4px at the default scale (0.25rem).
 - Colour means something, and the same thing everywhere. The greys are a cool slate
   ramp with white cards. One brand blue (`--brand`) for what is active or primary.
-  Soft tints, from `lib/tones.ts`, for tags, item icons and stat-card icons: blue
+  Soft tints, from `lib/tones.ts`, for tags (item icons are plain grey; stat-card icons are one brand-blue circle): blue
   customer money, violet vendors, pink cost, teal schedule, slate ownership, red
   late or failed, amber waiting on someone, green saved or done. Amber (`--accent`)
   still marks what needs a person. Charts use `--series-1` to `--series-5` in order: royal blue, soft green, sky blue, amber, teal, taken from the reference the owner chose. A chart with several series, a pie or a split bar gives every part its own one. Never shades of one hue for different things, and no orange.
@@ -110,6 +110,10 @@ Run from `frontend/`:
   It docks as a third column at 2xl and slides over the page below that.
 - Page layouts inside `main` respond to the width they have (`@[58rem]:` container
   variants), not the window, because the pane can take width away.
+- The overviews hold figures, charts and the work to do. Notes from the source systems and the
+  promises read from them live on the job page; every action taken in this app is shown only in
+  the audit log. Neither goes on an overview. Do not add a section to an existing screen
+  unless it was asked for.
 - There is no page for a single issue. Everything about a job, including what needs
   fixing on it, is on the job's page. An item opens in place under its row.
 - An action can only be something this app really does: draft a message, suggest a

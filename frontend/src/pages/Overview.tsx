@@ -2,15 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { CalendarClock, ClipboardList, FileText, Gauge, Receipt, Send, Siren, TrendingUp, UserX } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ActivityTable } from '../components/ActivityTable'
-import { CommitmentTable, ReadNotesButton } from '../components/Commitments'
 import { Chart } from '../components/Chart'
 import { Donut } from '../components/Donut'
 import { ItemTable, Tags } from '../components/ItemTable'
 import { JobTable } from '../components/JobTable'
 import { Card, CardHead, Loaded, PageHead, Select, Stat } from '../components/ui'
 import { api } from '../lib/api'
-import type { Commitment, Finance, FinancePeriod, Operations, Summary } from '../lib/api'
+import type { Finance, FinancePeriod, Operations, Summary } from '../lib/api'
 import { longDate, money, percent, plural, shortDate, words } from '../lib/format'
 import { buttonClass } from '../lib/styles'
 import { useViewer } from '../lib/viewer'
@@ -225,25 +223,6 @@ function LedgerTrend({ ledger }: { ledger: Finance }) {
 }
 
 /**
- * Promises and waits the assistant found in notes, for one view: everything, one
- * person's jobs, or one kind. The ones needing attention come first.
- */
-function CommitmentsCard({ title, owner, kind, state = 'active' }: { title: string; owner?: string; kind?: Commitment['kind']; state?: string }) {
-  const commitments = useQuery({
-    queryKey: ['commitments', 'overview', owner, kind, state],
-    queryFn: () => api.commitments({ owner, kind, state, limit: 8 }),
-  })
-  return (
-    <Card>
-      <CardHead title={title}>
-        <ReadNotesButton />
-      </CardHead>
-      <Loaded query={commitments}>{(page) => <CommitmentTable commitments={page.data} showJob showKind={!kind} />}</Loaded>
-    </Card>
-  )
-}
-
-/**
  * Finance's view: the ledger. What was earned and spent and when, where the
  * cost went, how the contract value is turning into cash, and what is owed.
  * Problems on individual jobs are on the Issues tab, not here.
@@ -251,10 +230,6 @@ function CommitmentsCard({ title, owner, kind, state = 'active' }: { title: stri
 function FinanceOverview({ summary }: { summary: Summary }) {
   const { cash, contract_to_cash: flow } = summary
   const finance = useQuery({ queryKey: ['finance'], queryFn: api.finance })
-  const accountingNotes = useQuery({
-    queryKey: ['activity', 'accounting'],
-    queryFn: () => api.activity({ source: 'accounting', limit: 8 }),
-  })
   const thin = useQuery({
     queryKey: ['jobs', 'lowest-margin'],
     queryFn: () => api.jobs({ sort: 'margin', order: 'asc', limit: 6 }),
@@ -351,21 +326,6 @@ function FinanceOverview({ summary }: { summary: Summary }) {
           </>
         )}
       </Loaded>
-
-      {/* What customers have said about paying, read out of the notes, and whether they did. */}
-      <CommitmentsCard title="Payment promises" kind="payment_promised" state="all" />
-
-      {/* Notes finance has written on invoices, newest first, so a promise to pay or a dispute is not missed. */}
-      <Card>
-        <CardHead title="Latest notes in accounting">
-          <Link to="/activity?source=accounting" className={buttonClass()}>
-            All activity
-          </Link>
-        </CardHead>
-        <Loaded query={accountingNotes}>
-          {(page) => <ActivityTable entries={page.data} showJob showCheck={false} empty="Nobody has written a note in accounting yet" />}
-        </Loaded>
-      </Card>
 
       <Card>
         <CardHead title="Lowest margin first">
@@ -639,8 +599,6 @@ function OperationsOverview({ summary }: { summary: Summary }) {
         }}
       </Loaded>
 
-      {/* Inspections, tenants and suppliers the work is waiting on, and what the teams said they would do next. */}
-      <CommitmentsCard title="Promises and waits" />
     </>
   )
 }
@@ -658,10 +616,6 @@ function MyOverview({ summary, owner }: { summary: Summary; owner: string }) {
         .sort((a, b) => Number(a.state !== 'needs_action') - Number(b.state !== 'needs_action') || Number(b.amount) - Number(a.amount)),
   })
   const jobs = useQuery({ queryKey: ['jobs', owner, 'mine'], queryFn: () => api.jobs({ owner, limit: 100 }) })
-  const notes = useQuery({
-    queryKey: ['activity', 'mine', owner],
-    queryFn: () => api.activity({ owner, people_only: true, limit: 8 }),
-  })
 
   return (
     <>
@@ -696,18 +650,6 @@ function MyOverview({ summary, owner }: { summary: Summary; owner: string }) {
           </Link>
         </CardHead>
         <Loaded query={jobs}>{(page) => <JobTable jobs={page.data} showOwner={false} />}</Loaded>
-      </Card>
-
-      <CommitmentsCard title="Promises and waits on my jobs" owner={owner} />
-
-      {/* What people wrote in the project system and accounting, and did here, on these jobs. Syncs are left out. */}
-      <Card>
-        <CardHead title="Latest notes and updates on my jobs">
-          <Link to="/activity" className={buttonClass()}>
-            All activity
-          </Link>
-        </CardHead>
-        <Loaded query={notes}>{(page) => <ActivityTable entries={page.data} showJob empty="Nobody has written anything on your jobs yet" />}</Loaded>
       </Card>
     </>
   )

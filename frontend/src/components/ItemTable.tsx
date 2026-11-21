@@ -40,11 +40,12 @@ export function Tag({ children, tone }: { children: ReactNode; tone: Tone }) {
 // under it, so the eye can tell the question from the answer.
 const HEADING = 'text-[0.8125rem] font-medium text-ink'
 
-/** What kind of thing an item is, as a small tinted icon in its colour. */
+/** What kind of thing an item is, as a plain grey icon. */
 export function KindIcon({ kind }: { kind: Item['kind'] }) {
-  const { tone, icon: Icon } = KIND[kind]
+  // The icon alone says which problem it is; colour is left to the tags beside it.
+  const { icon: Icon } = KIND[kind]
   return (
-    <span aria-hidden className={cx('grid size-7 shrink-0 place-items-center rounded-lg', TONE[tone])}>
+    <span aria-hidden className="grid size-7 shrink-0 place-items-center text-muted">
       <Icon size="1rem" strokeWidth={1.5} />
     </span>
   )

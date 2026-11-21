@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowRight } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { api } from '../lib/api'
 import type { JobItems } from '../lib/api'
-import { about } from '../lib/items'
+import { money } from '../lib/format'
 import { Working } from './Conversation'
 import { ItemTable } from './ItemTable'
 import { useItemWork } from './useItemWork'
@@ -67,22 +68,26 @@ export function NextSteps({ jobNumber, items }: { jobNumber: string; items: JobI
         ) : (
           first &&
           items.suggestion && (
-            <div className="mx-5 mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-lg bg-brand-soft/50 p-4">
-              <div className="min-w-0 flex-1">
-                <p className="text-[0.8125rem] text-ink-2">Do this first</p>
-                <p className="font-medium">
-                  {items.suggestion.action.label}
-                  <span className="font-normal text-ink-2">
-                    {' '}
-                    on {first.title.charAt(0).toLowerCase() + first.title.slice(1)}{' '}
-                    <span className="font-mono text-[0.8125rem]">{about(first)}</span>
-                  </span>
+            // The one thing to do first: what it is, which document and how much, why, and the
+            // button that starts it. The step is named once, on the button.
+            <div className="mx-5 mb-4 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 rounded-xl @[44rem]:items-center border border-brand/20 bg-brand-soft/50 p-4 @[44rem]:grid-cols-[auto_minmax(0,1fr)_auto]">
+              <span aria-hidden className="grid size-10 place-items-center rounded-full bg-btn text-btn-ink">
+                <ArrowRight size="1.125rem" strokeWidth={1.75} />
+              </span>
+              <div className="flex min-w-0 flex-col gap-1">
+                <p className="text-xs leading-4 font-medium text-brand-ink">Do this first</p>
+                <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="font-medium">{first.title}</span>
+                  {first.document && <span className="font-mono text-[0.8125rem] text-ink-2">{first.document}</span>}
+                  {Number(first.amount) > 0 && <span className="font-mono text-[0.8125rem]">{money(first.amount)}</span>}
                 </p>
-                {items.suggestion.reason && <p className="mt-1 text-ink-2">{items.suggestion.reason}</p>}
+                {items.suggestion.reason && <p className="text-[0.8125rem] text-ink-2">{items.suggestion.reason}</p>}
               </div>
-              <Button variant="primary" disabled={work.busy} onClick={() => work.start(first)}>
-                {items.suggestion.action.label}
-              </Button>
+              <div className="col-span-2 @[44rem]:col-span-1">
+                <Button variant="primary" disabled={work.busy} onClick={() => work.start(first)}>
+                  {items.suggestion.action.label}
+                </Button>
+              </div>
             </div>
           )
         )}

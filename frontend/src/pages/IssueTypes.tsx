@@ -9,10 +9,12 @@ import { money } from '../lib/format'
 import { useRunSync } from '../lib/sync'
 import { useViewer } from '../lib/viewer'
 
-/** A tolerance is stored as a ratio (0.02) or as dollars (1). Show it the way people say it. */
+/** A tolerance is stored as a ratio (0.02), as days (14) or as dollars (1). Show it the way people say it. */
 function shown(type: IssueType): string {
   if (type.tolerance === null) return ''
-  return type.tolerance_unit === 'ratio' ? `${Number(type.tolerance) * 100}%` : money(type.tolerance)
+  if (type.tolerance_unit === 'ratio') return `${Number(type.tolerance) * 100}%`
+  if (type.tolerance_unit === 'days') return `${Number(type.tolerance)} days`
+  return money(type.tolerance)
 }
 
 function ToleranceCell({ type }: { type: IssueType }) {
@@ -97,7 +99,7 @@ export function IssueTypes() {
   return (
     <>
       <PageHead
-        title="Issue types"
+        title="Checks"
         aside={types.data?.length}
         sub="Each type is one way the three systems can disagree about a job. Changes take effect on the next sync"
       >
