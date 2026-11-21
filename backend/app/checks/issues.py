@@ -38,56 +38,63 @@ UNSENT_STATUSES = ("APPROVED", "DRAFT", "SYNC_FAILED")
 DOCUMENT_TYPES = ("closed_bills", "past_due", "not_sent", "closed_month", "bill_overdue", "discount", "no_job")
 POSTED_STATUSES = ("POSTED", "POSTING_FAILED")
 
-# key, title, severity, about, tolerance, unit, description
-ISSUE_TYPES = [
-    ("closed_bills", "Closed with unpaid vendor bills", "high", "cash", None, None,
-     "The job is closed but a vendor bill on it is still unpaid."),
-    ("past_due", "Customer invoice past due", "high", "cash", None, None,
-     "A sent invoice still has a balance after its due date."),
-    ("not_sent", "Invoice not sent", "high", "billing", None, None,
-     "An invoice is approved, still a draft, or failed to reach accounting."),
-    ("over_contract", "Cost above contract", "high", "cost", None, None,
-     "The budget or the cost so far is higher than the contract value."),
-    ("closed_month", "Bill in a closed month, not booked", "high", "cash", None, None,
-     "A vendor bill is dated in a month finance has closed and has not been posted, so that month's cost is short."),
-    ("cost_disagree", "Ops and ledger cost disagree", "medium", "cost", Decimal("0.02"), "ratio",
-     "The project team's cost total and the ledger's differ by more than the tolerance."),
-    ("no_ledger_cost", "Cost missing from ledger", "medium", "cost", None, None,
-     "The project team has logged cost and the ledger has none for the job."),
-    ("rev_invoiced", "Ledger revenue differs from invoiced", "medium", "billing", Decimal("0.02"), "ratio",
-     "Revenue in the ledger and the job's invoices differ by more than the tolerance."),
-    ("underbilled", "Completed, not fully billed", "medium", "billing", Decimal("1"), "usd",
-     "Work is complete and invoices total less than the contract by more than the tolerance."),
-    ("bill_overdue", "Vendor bill failed or overdue", "medium", "cash", None, None,
-     "A vendor bill failed to post, or is posted and past its due date."),
-    ("discount", "Early-pay discount at risk", "medium", "cash", None, None,
-     "A bill from a vendor with discount terms is not yet approved and the deadline has not passed."),
-    ("no_job", "Vendor bill with no job", "medium", "cost", None, None,
-     "A vendor bill is not assigned to any job."),
-    ("no_owner", "No operations owner", "medium", "ownership", None, None,
-     "The job has no ops manager assigned."),
-    ("slow_start", "Slow to start", "medium", "schedule", Decimal("14"), "days",
-     "The job is not on site yet and will start more than the tolerance after it was won. Urgent jobs: more than 1 day."),
-    ("past_finish", "Past planned finish", "high", "schedule", None, None,
-     "The job is still in progress after its planned finish date."),
-    ("no_activity", "No work logged", "medium", "schedule", Decimal("14"), "days",
-     "The job is in progress and no cost or vendor bill is dated within the tolerance."),
-    ("budget_burn", "Spending ahead of schedule", "medium", "cost", Decimal("0.10"), "ratio",
-     "The share of budget used is ahead of the share of schedule gone by more than the tolerance, or cost is over budget."),
-]
+
+@dataclass(frozen=True)
+class CheckDefinition:
+    """What a built-in check is, written next to the query that does it.
+
+    The fields split by who owns them. Code owns what describes the logic (title,
+    description, area, unit): a change here reaches the database on the next start.
+    People own the settings (on or off, tolerance, severity): the defaults below seed a
+    new database, and after that only the Checks screen changes them."""
+
+    key: str
+    title: str
+    severity: str
+    about: str
+    tolerance: Decimal | None
+    unit: str | None
+    description: str
+    order: int
+
+
+DEFINITIONS: dict[str, CheckDefinition] = {}
+CHECKS: dict[str, object] = {}
+
+
+def check(key: str, title: str, severity: str, about: str, tolerance: Decimal | None, unit: str | None, description: str, *, order: int):
+    """Register a built-in check: its definition and the function that runs it, in one place."""
+
+    def register(function):
+        DEFINITIONS[key] = CheckDefinition(key, title, severity, about, tolerance, unit, description, order)
+        CHECKS[key] = function
+        return function
+
+    return register
 
 
 async def ensure_issue_types(db: AsyncSession) -> None:
-    """Add any issue type that is missing. Existing rows keep their settings."""
+    """Add any built-in check that is missing, and bring the fields code owns up to date
+    on the ones already there. Settings people own are never overwritten."""
     rows = [
         {
-            "key": key, "title": title, "severity": severity, "about": about, "tolerance": tolerance,
-            "tolerance_unit": unit, "description": description, "enabled": True, "sort_order": order,
+            "key": d.key, "title": d.title, "severity": d.severity, "about": d.about, "tolerance": d.tolerance,
+            "tolerance_unit": d.unit, "description": d.description, "enabled": True, "sort_order": d.order,
         }
-        for order, (key, title, severity, about, tolerance, unit, description) in enumerate(ISSUE_TYPES)
+        for d in sorted(DEFINITIONS.values(), key=lambda d: d.order)
     ]
-    await db.execute(insert(IssueType).values(rows).on_conflict_do_nothing(index_elements=["key"]))
+    statement = insert(IssueType).values(rows)
+    owned_by_code = ("title", "description", "about", "tolerance_unit", "sort_order")
+    await db.execute(
+        statement.on_conflict_do_update(
+            index_elements=["key"],
+            set_={column: statement.excluded[column] for column in owned_by_code},
+            # Only built-in checks: a check a person added is theirs entirely.
+            where=IssueType.origin == "built_in",
+        )
+    )
     await db.flush()
+
 
 
 @dataclass
@@ -190,6 +197,11 @@ def _bills(*columns):
 # Python only turns those rows into words.
 
 
+@check(
+    "closed_bills", "Closed with unpaid vendor bills", "high", "cash", None, None,
+    "The job is closed but a vendor bill on it is still unpaid.",
+    order=0,
+)
 async def closed_bills(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     label = line.doc_number + " from " + func.coalesce(line.description, "unknown vendor")
     rows = await db.execute(
@@ -216,6 +228,11 @@ async def closed_bills(db: AsyncSession, run: SyncRun, issue_type: IssueType) ->
     ]
 
 
+@check(
+    "past_due", "Customer invoice past due", "high", "cash", None, None,
+    "A sent invoice still has a balance after its due date.",
+    order=1,
+)
 async def past_due(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     days_late = type_coerce(literal(run.as_of, Date) - line.due_date, Integer).label("days_late")
     rows = await db.execute(
@@ -236,6 +253,11 @@ async def past_due(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> lis
     ]
 
 
+@check(
+    "not_sent", "Invoice not sent", "high", "billing", None, None,
+    "An invoice is approved, still a draft, or failed to reach accounting.",
+    order=2,
+)
 async def not_sent(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     rows = await db.execute(_invoices().where(line.status.in_(UNSENT_STATUSES)))
     found = []
@@ -256,6 +278,11 @@ async def not_sent(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> lis
     return found
 
 
+@check(
+    "over_contract", "Cost above contract", "high", "cost", None, None,
+    "The budget or the cost so far is higher than the contract value.",
+    order=3,
+)
 async def over_contract(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     cost_so_far = func.greatest(fin.ops_cost, fin.ledger_cost)
     rows = await db.execute(
@@ -281,6 +308,11 @@ async def over_contract(db: AsyncSession, run: SyncRun, issue_type: IssueType) -
     ]
 
 
+@check(
+    "cost_disagree", "Ops and ledger cost disagree", "medium", "cost", Decimal("0.02"), "ratio",
+    "The project team's cost total and the ledger's differ by more than the tolerance.",
+    order=5,
+)
 async def cost_disagree(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     gap = func.abs(fin.ops_cost - fin.ledger_cost)
     rows = await db.execute(
@@ -300,6 +332,11 @@ async def cost_disagree(db: AsyncSession, run: SyncRun, issue_type: IssueType) -
     ]
 
 
+@check(
+    "no_ledger_cost", "Cost missing from ledger", "medium", "cost", None, None,
+    "The project team has logged cost and the ledger has none for the job.",
+    order=6,
+)
 async def no_ledger_cost(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     rows = await db.execute(
         _jobs(run, fin.ops_cost, _line_ids("ops_cost")).where(fin.ops_cost > 0, fin.ledger_cost == 0)
@@ -316,6 +353,11 @@ async def no_ledger_cost(db: AsyncSession, run: SyncRun, issue_type: IssueType) 
     ]
 
 
+@check(
+    "rev_invoiced", "Ledger revenue differs from invoiced", "medium", "billing", Decimal("0.02"), "ratio",
+    "Revenue in the ledger and the job's invoices differ by more than the tolerance.",
+    order=7,
+)
 async def rev_invoiced(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     gap = func.abs(fin.ledger_revenue - fin.invoiced)
     rows = await db.execute(
@@ -335,6 +377,11 @@ async def rev_invoiced(db: AsyncSession, run: SyncRun, issue_type: IssueType) ->
     ]
 
 
+@check(
+    "underbilled", "Completed, not fully billed", "medium", "billing", Decimal("1"), "usd",
+    "Work is complete and invoices total less than the contract by more than the tolerance.",
+    order=8,
+)
 async def underbilled(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     unbilled = Job.contract_value - fin.invoiced
     rows = await db.execute(
@@ -358,6 +405,11 @@ async def underbilled(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> 
     ]
 
 
+@check(
+    "no_owner", "No operations owner", "medium", "ownership", None, None,
+    "The job has no ops manager assigned.",
+    order=12,
+)
 async def no_owner(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     executive = func.coalesce(ACCOUNT_EXECUTIVE, "nobody").label("executive")
     rows = await db.execute(_jobs(run, executive).where(OPS_MANAGER.is_(None)))
@@ -373,6 +425,11 @@ async def no_owner(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> lis
     ]
 
 
+@check(
+    "no_job", "Vendor bill with no job", "medium", "cost", None, None,
+    "A vendor bill is not assigned to any job.",
+    order=11,
+)
 async def no_job(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     rows = await db.execute(_bills().where(line.job_id.is_(None)))
     return [
@@ -412,6 +469,11 @@ def last_closed_day(run: SyncRun):
     )
 
 
+@check(
+    "closed_month", "Bill in a closed month, not booked", "high", "cash", None, None,
+    "A vendor bill is dated in a month finance has closed and has not been posted, so that month's cost is short.",
+    order=4,
+)
 async def closed_month(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     # The ledger books cost as journal entries per job and never cites a bill's number, so
     # whether a bill is booked is read from the bill itself: posted, or not.
@@ -431,6 +493,11 @@ async def closed_month(db: AsyncSession, run: SyncRun, issue_type: IssueType) ->
     ]
 
 
+@check(
+    "bill_overdue", "Vendor bill failed or overdue", "medium", "cash", None, None,
+    "A vendor bill failed to post, or is posted and past its due date.",
+    order=9,
+)
 async def bill_overdue(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     rows = await db.execute(_bills().where(line.status.in_(POSTED_STATUSES), line.due_date < run.as_of))
     found = []
@@ -452,6 +519,11 @@ async def bill_overdue(db: AsyncSession, run: SyncRun, issue_type: IssueType) ->
     return found
 
 
+@check(
+    "discount", "Early-pay discount at risk", "medium", "cash", None, None,
+    "A bill from a vendor with discount terms is not yet approved and the deadline has not passed.",
+    order=10,
+)
 async def discount(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     deadline = line.line_date + func.coalesce(vendor.discount_days, 0)
     rows = await db.execute(
@@ -482,6 +554,11 @@ async def discount(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> lis
 # they should, keep moving, and spend at the pace their schedule allows.
 
 
+@check(
+    "slow_start", "Slow to start", "medium", "schedule", Decimal("14"), "days",
+    "The job is not on site yet and will start more than the tolerance after it was won. Urgent jobs: more than 1 day.",
+    order=13,
+)
 async def slow_start(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     as_of = literal(run.as_of, Date)
     start = func.coalesce(Job.on_site_on, as_of)
@@ -509,6 +586,11 @@ async def slow_start(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> l
     return findings
 
 
+@check(
+    "past_finish", "Past planned finish", "high", "schedule", None, None,
+    "The job is still in progress after its planned finish date.",
+    order=14,
+)
 async def past_finish(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     rows = await db.execute(
         _jobs(run, Job.planned_finish_on).where(Job.stage == "IN_PROGRESS", Job.planned_finish_on < run.as_of)
@@ -528,6 +610,11 @@ async def past_finish(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> 
     ]
 
 
+@check(
+    "no_activity", "No work logged", "medium", "schedule", Decimal("14"), "days",
+    "The job is in progress and no cost or vendor bill is dated within the tolerance.",
+    order=15,
+)
 async def no_activity(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     work = ("ops_cost", "vendor_bill")
     last = (
@@ -564,6 +651,11 @@ async def no_activity(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> 
     ]
 
 
+@check(
+    "budget_burn", "Spending ahead of schedule", "medium", "cost", Decimal("0.10"), "ratio",
+    "The share of budget used is ahead of the share of schedule gone by more than the tolerance, or cost is over budget.",
+    order=16,
+)
 async def budget_burn(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> list[Finding]:
     cost = func.greatest(fin.ops_cost, fin.ledger_cost)
     days = cast(Job.planned_finish_on - Job.on_site_on, Integer)
@@ -599,14 +691,6 @@ async def budget_burn(db: AsyncSession, run: SyncRun, issue_type: IssueType) -> 
     ]
 
 
-CHECKS = {
-    check.__name__: check
-    for check in (
-        closed_bills, past_due, not_sent, over_contract, closed_month, cost_disagree, no_ledger_cost,
-        rev_invoiced, underbilled, bill_overdue, discount, no_job, no_owner,
-        slow_start, past_finish, no_activity, budget_burn,
-    )
-}
 
 
 async def detect(db: AsyncSession, run: SyncRun) -> list[Finding]:

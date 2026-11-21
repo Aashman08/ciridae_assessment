@@ -287,6 +287,7 @@ class IssueTypeUpdate(BaseModel):
 
     enabled: bool | None = None
     tolerance: Decimal | None = Field(None, ge=0)
+    severity: Literal["high", "medium"] | None = None
     actor: str = Field("Someone", min_length=1, max_length=120, description="Who is making the change, for the activity log")
 
 

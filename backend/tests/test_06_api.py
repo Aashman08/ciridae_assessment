@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import event
+from sqlalchemy import event, text
 
 from app.core import database
 
@@ -615,3 +615,25 @@ async def test_the_finance_view_ties_to_the_ledger_and_the_summary(api, db):
     kinds = finance["by_service_line"]
     assert sum(k["jobs"] for k in kinds) == 25
     assert sum(Decimal(k["profit"]) for k in kinds) == Decimal(finance["profit"])
+
+
+async def test_code_owns_a_checks_wording_and_people_own_its_settings(api, db):
+    """A check's title and description come from code on every start; its on/off switch,
+    tolerance and severity are whatever people last set, and a restart keeps them."""
+    from app.checks.issues import DEFINITIONS, ensure_issue_types
+
+    await api.patch(f"{API}/issue-types/cost_disagree", json={"tolerance": "0.05", "severity": "high", "enabled": False, "actor": "Rachel Kim"})
+    # A database left behind by an older version of the code, with old wording.
+    await db.execute(text("update recon.issue_type set title = 'Old name', description = 'Old words' where key = 'cost_disagree'"))
+    await db.commit()
+
+    await ensure_issue_types(db)
+    await db.commit()
+    row = (await db.execute(text("select title, description, tolerance, severity, enabled from recon.issue_type where key = 'cost_disagree'"))).one()
+    assert (row.title, row.description) == (DEFINITIONS["cost_disagree"].title, DEFINITIONS["cost_disagree"].description)
+    assert (row.tolerance, row.severity, row.enabled) == (Decimal("0.05"), "high", False)
+
+    log = (await get(api, "/activity", kind="setting_changed", person="Rachel Kim"))["data"]
+    assert {"Changed severity", "Changed tolerance", "Switched a check off"} <= {e["action"] for e in log}
+
+    await api.patch(f"{API}/issue-types/cost_disagree", json={"tolerance": "0.02", "severity": "medium", "enabled": True, "actor": "Rachel Kim"})

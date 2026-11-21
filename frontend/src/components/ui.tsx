@@ -268,6 +268,8 @@ interface SelectProps {
   className?: string
   /** The label sits beside the control in a row of filters, and above it in a form. */
   layout?: 'inline' | 'stacked'
+  /** Keep the label for screen readers only, where a column heading already says it. */
+  hideLabel?: boolean
 }
 
 /**
@@ -275,7 +277,7 @@ interface SelectProps {
  * would bring the operating system's menu with it. Works with the keyboard:
  * arrows move, Enter or Space chooses, Escape closes.
  */
-export function Select({ label, value, onChange, all, options, className = 'w-48', layout = 'inline' }: SelectProps) {
+export function Select({ label, value, onChange, all, options, className = 'w-48', layout = 'inline', hideLabel = false }: SelectProps) {
   const id = useId()
   const button = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
@@ -367,7 +369,7 @@ export function Select({ label, value, onChange, all, options, className = 'w-48
 
   return (
     <div className={cx('flex min-w-0 text-[0.8125rem]', layout === 'inline' ? 'items-center gap-2' : 'flex-col gap-2')}>
-      <span id={`${id}-label`} className="text-ink-2">
+      <span id={`${id}-label`} className={hideLabel ? 'sr-only' : 'text-ink-2'}>
         {label}
       </span>
       <button

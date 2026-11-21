@@ -13,6 +13,7 @@ from app.endpoints import health_router, router
 from app.core.errors import APIError
 from app.core.exception_handlers import api_error_response
 from app.core.middleware import request_id_middleware
+from app.checks.issues import ensure_issue_types
 
 # Our own messages (sync results, what each Ask question used) go to the terminal.
 logging.getLogger("app").setLevel(logging.INFO)
@@ -20,8 +21,12 @@ logging.basicConfig(format="%(levelname)s:     %(name)s: %(message)s")
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-    """Migrate, then keep the figures current on a schedule until shutdown."""
+    """Migrate, update the built-in checks, then keep the figures current on a schedule until shutdown."""
     async with database.lifespan(application):
+        # The built-in checks' wording comes from code, so bring it up to date on every start.
+        async with database.SessionLocal() as db:
+            await ensure_issue_types(db)
+            await db.commit()
         every = database.settings.sync_every_minutes
         schedule = asyncio.create_task(sync_on_schedule(every)) if every > 0 else None
         try:

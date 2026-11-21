@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AddCheck } from '../components/AddCheck'
-import { Button, Card, Loaded, PageHead, Toggle } from '../components/ui'
+import { Button, Card, Loaded, PageHead, Select, Toggle } from '../components/ui'
 import { api } from '../lib/api'
 import type { IssueType } from '../lib/api'
 import { money } from '../lib/format'
@@ -36,10 +36,14 @@ function ToleranceCell({ type }: { type: IssueType }) {
 
   if (draft === null) {
     return (
-      <span className="flex items-center justify-end gap-3">
-        <span className="font-mono text-[0.8125rem] tabular-nums">{shown(type)}</span>
-        <Button onClick={() => setDraft(String(ratio ? Number(type.tolerance) * 100 : Number(type.tolerance)))}>Change</Button>
-      </span>
+      // The value is the button: click it to change it.
+      <Button
+        aria-label={`Change the tolerance for ${type.title}, now ${shown(type)}`}
+        className="font-mono tabular-nums"
+        onClick={() => setDraft(String(ratio ? Number(type.tolerance) * 100 : Number(type.tolerance)))}
+      >
+        {shown(type)}
+      </Button>
     )
   }
 
@@ -71,6 +75,29 @@ function ToleranceCell({ type }: { type: IssueType }) {
       </Button>
       <Button onClick={() => setDraft(null)}>Cancel</Button>
     </form>
+  )
+}
+
+/** How serious a check's findings are: the business decides, so it can be changed here. */
+function SeverityCell({ type }: { type: IssueType }) {
+  const { viewer } = useViewer()
+  const client = useQueryClient()
+  const change = useMutation({
+    mutationFn: (severity: 'high' | 'medium') => api.updateIssueType(type.key, { severity, actor: viewer.name }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['issue-types'] }),
+  })
+  return (
+    <Select
+      label={`Severity of ${type.title}`}
+      value={type.severity}
+      onChange={(value) => change.mutate(value as 'high' | 'medium')}
+      options={[
+        { value: 'high', label: 'High' },
+        { value: 'medium', label: 'Medium' },
+      ]}
+      className="w-[6.5rem]"
+      hideLabel
+    />
   )
 }
 
@@ -151,10 +178,12 @@ export function IssueTypes() {
                           {type.title}
                         </Link>
                       </td>
-                      <td className="min-w-48 py-2 text-[0.8125rem] text-ink-2 whitespace-normal!">
+                      <td className="min-w-36 py-2 text-[0.8125rem] text-ink-2 whitespace-normal!">
                         {type.description.replace(/\.$/, '')}
                       </td>
-                      <td className="text-ink-2 capitalize">{type.severity}</td>
+                      <td>
+                        <SeverityCell type={type} />
+                      </td>
                       <td className="text-ink-2 capitalize max-2xl:hidden">{type.about}</td>
                       <td className="text-ink-2 max-2xl:hidden">{type.origin === 'built_in' ? 'Built in' : type.created_by}</td>
                       <td className="num">{type.open_count}</td>

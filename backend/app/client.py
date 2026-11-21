@@ -235,6 +235,7 @@ def audit_action(kind: str, by: str, text: str | None, source: str, changes: lis
         for start, said in (
             ("Added this check", "Added a check"), ("Switched on", "Switched a check on"),
             ("Switched off", "Switched a check off"), ("Tolerance changed", "Changed tolerance"),
+            ("Severity changed", "Changed severity"),
         ):
             if text.startswith(start):
                 return said
@@ -761,6 +762,12 @@ class ReconClient:
                 {"field": "Check", "before": "on" if issue_type.enabled else "off", "after": "on" if payload.enabled else "off"},
             ))
             issue_type.enabled = payload.enabled
+        if payload.severity is not None and payload.severity != issue_type.severity:
+            changes.append((
+                f"Severity changed from {issue_type.severity} to {payload.severity}",
+                {"field": "Severity", "before": issue_type.severity, "after": payload.severity},
+            ))
+            issue_type.severity = payload.severity
         if payload.tolerance is not None:
             if issue_type.tolerance_unit is None:
                 raise InvalidRequestError(f"'{issue_type.title}' has no tolerance to set.")

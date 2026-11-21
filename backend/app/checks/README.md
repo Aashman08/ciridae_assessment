@@ -8,5 +8,12 @@
 | `items.py` | Groups issues into items, the things a person fixes, and the fixed rule for each item's next step |
 
 All three kinds of check run in the same step of a sync and produce issues the same
-way. A sync never calls a model. Tolerances and on/off switches are data in
-`issue_type`, changed on the Checks screen or through `PATCH /issue-types/{key}`.
+way. A sync never calls a model.
+
+A built-in check is one function in `issues.py` with its definition in a `@check(...)`
+decorator above it. Adding a check means writing one decorated function.
+
+| Field | Owned by | What happens |
+| --- | --- | --- |
+| Title, description, area, unit, order | Code | Updated from the decorator on every start and every sync |
+| On or off, tolerance, severity | People | Set from the decorator only for a new database; after that, only the Checks screen or `PATCH /issue-types/{key}` changes them, and each change goes in the audit log |
