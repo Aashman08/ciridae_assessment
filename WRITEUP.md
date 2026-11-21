@@ -198,13 +198,11 @@ billed are on screen, each with an owner and a next step.
 
 ## 10. What I will do next
 
-1. **Connectors and write-back.** Live connections to the three systems. After a person
-   approves, the app sends the invoice or approves the bill.
-2. **Messages where the team works.** Send each draft from the person's mailbox, and
-   post internal messages to the team's chat tool. The AI reads the replies and
-   updates the item.
-3. **Maya Chen, COO.** One view from lead to cash for each branch: where growth,
-   delivery or cash is slow.
-4. **Devon Brooks, VP of Growth.** The pipeline ($3,980,500 open), where conversion is
-   slow, and which customers need attention. The AI logs contacts from email, so
-   salespeople do not type data.
+1. **Connectors.** Connect live to the CRM, the project system, accounting, email and the
+   team's chat tool. After a person approves, the app sends the invoice, approves the bill
+   or sends the message. The AI reads each reply and updates the item.
+2. **Maya Chen, COO: lead to cash by branch.** One screen shows where each branch loses
+   time or money, from new loss to start, invoice and cash. A weekly AI brief tells her what changed.
+3. **Devon Brooks, VP of Growth: a pipeline that fills itself.** The AI reads sales email
+   and meeting notes, logs each contact and suggests each change of stage. Devon sees
+   which deals are real, where conversion is slow, and which customers need attention.
