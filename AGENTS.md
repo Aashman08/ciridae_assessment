@@ -74,7 +74,7 @@ Run from `frontend/`:
 - Colours, fonts and shadows come from the tokens in `index.css`. Do not write a
   hex colour in a component.
 - Sizes are written in rem, never px, so the whole interface scales from one
-  value: `html { font-size }` in `index.css`, currently 112.5%. Only hairlines
+  value: `html { font-size }` in `index.css`, currently 125%. Only hairlines
   under 4px (borders, rings, outlines) stay in px.
 - Every size and gap is a multiple of 4px at the default scale (0.25rem).
 - Colour means something, and the same thing everywhere. The greys are a cool slate

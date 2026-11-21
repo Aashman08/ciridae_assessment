@@ -82,8 +82,8 @@ export function CommitmentTable({
             <th>Who</th>
             <th>What</th>
             {showJob && <th className="max-md:hidden">Job</th>}
-            <th className={showJob ? '@max-[70rem]:hidden' : '@max-[56rem]:hidden'}>Document</th>
-            <th className="@max-[80rem]:hidden">Noted by</th>
+            <th className={showJob ? '@max-[63rem]:hidden' : '@max-[50rem]:hidden'}>Document</th>
+            <th className="@max-[72rem]:hidden">Noted by</th>
             <th>
               <span className="sr-only">Mark done</span>
             </th>
@@ -110,8 +110,8 @@ export function CommitmentTable({
                   {c.what}
                 </td>
                 {showJob && <td className="max-w-[14rem] truncate text-ink-2 max-md:hidden">{c.job_name ?? ''}</td>}
-                <td className={`font-mono text-[0.8125rem] text-ink-2 ${showJob ? '@max-[70rem]:hidden' : '@max-[56rem]:hidden'}`}>{c.document ?? ''}</td>
-                <td className="text-ink-2 @max-[80rem]:hidden">{c.noted_by}</td>
+                <td className={`font-mono text-[0.8125rem] text-ink-2 ${showJob ? '@max-[63rem]:hidden' : '@max-[50rem]:hidden'}`}>{c.document ?? ''}</td>
+                <td className="text-ink-2 @max-[72rem]:hidden">{c.noted_by}</td>
                 <td className="text-right">
                   {/* A payment promise that the payments show was kept needs no button. */}
                   {c.state !== 'kept' && (

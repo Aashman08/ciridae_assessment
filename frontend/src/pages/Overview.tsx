@@ -266,7 +266,7 @@ function FinanceOverview({ summary }: { summary: Summary }) {
 
             <LedgerTrend ledger={ledger} />
 
-            <div className="grid grid-cols-1 gap-4 @[60rem]:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 @[54rem]:grid-cols-2">
               <Donut
                 title="Cost by cost code"
                 heading="Cost code"

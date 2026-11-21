@@ -38,7 +38,7 @@ function Disagreement({ title, figures }: { title: string; figures: { label: str
       </button>
       <span
         role="tooltip"
-        className="pointer-events-none invisible absolute top-full left-0 z-20 mt-1 flex w-max max-w-[21rem] flex-col gap-1 rounded-lg border border-hair bg-card px-3 py-2 text-[0.8125rem] font-normal opacity-0 shadow-float transition-opacity duration-150 ease-out group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        className="pointer-events-none absolute top-full left-0 z-20 mt-1 hidden w-max max-w-[min(21rem,calc(100vw-5rem))] flex-col gap-1 rounded-lg border border-hair bg-card px-3 py-2 text-[0.8125rem] font-normal shadow-float group-focus-within:flex group-hover:flex"
       >
         <span className="text-ink">{title} differs across the systems of record</span>
         {figures.map((f) => (
@@ -118,47 +118,63 @@ function ProfitResult({ job }: { job: Job }) {
   )
 }
 
+/** One system's facts about the job: a header with a line under it, then one row per fact. */
+function SystemColumn({ title, rows, first = false }: { title: string; rows: [label: string, value: string][]; first?: boolean }) {
+  const figure = (value: string) => /^[−-]?\$/.test(value)
+  return (
+    <div className={first ? '' : 'md:border-l md:border-hair'}>
+      <h3 className="flex h-9 items-center border-b border-hair px-5 text-xs text-muted">{title}</h3>
+      <dl>
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid h-10 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-hair px-5 last:border-b-0">
+            <dt className="text-[0.8125rem] text-ink-2">{label}</dt>
+            <dd className={figure(value) ? 'text-right font-mono text-[0.8125rem] tabular-nums' : 'text-right text-[0.8125rem]'}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+/**
+ * What each source system says about the job, side by side like a table: a header row
+ * whose line runs the full width of the card, then a row per fact, a column per system.
+ */
 function SystemFacts({ job }: { job: Job }) {
-  const heading = 'pb-2 text-[0.8125rem] font-medium'
   return (
     <Card>
       <CardHead title="What each system says" />
-      <div className="grid grid-cols-1 gap-x-8 gap-y-6 px-5 pb-5 md:grid-cols-3">
-        <div>
-          <h3 className={heading}>CRM</h3>
-          <Facts
-            rows={[
-              ['Won', shortDate(job.won_on)],
-              ['Estimated value', money(job.estimated_value)],
-              ['Account executive', job.account_executive ?? 'None'],
-            ]}
-          />
-        </div>
-        <div>
-          <h3 className={heading}>Project system</h3>
-          <Facts
-            rows={[
-              ['Stage', stage(job.stage)],
-              ['On site', shortDate(job.on_site_on)],
-              ['Planned finish', shortDate(job.planned_finish_on)],
-              ['Completed', shortDate(job.completed_on)],
-              ['Closed', shortDate(job.closed_on)],
-              ['Cost logged', money(job.ops_cost)],
-            ]}
-          />
-        </div>
-        <div>
-          <h3 className={heading}>Accounting</h3>
-          <Facts
-            rows={[
-              ['Revenue in ledger', money(job.ledger_revenue)],
-              ['Cost in ledger', money(job.ledger_cost)],
-              ['Invoices sent', money(job.sent)],
-              ['Still owed', money(job.owed)],
-              ['Vendor bills unpaid', money(job.unpaid_bills)],
-            ]}
-          />
-        </div>
+      <div className="grid grid-cols-1 border-t border-hair md:grid-cols-3">
+        <SystemColumn
+          first
+          title="CRM"
+          rows={[
+            ['Won', shortDate(job.won_on)],
+            ['Estimated value', money(job.estimated_value)],
+            ['Account executive', job.account_executive ?? 'None'],
+          ]}
+        />
+        <SystemColumn
+          title="Project system"
+          rows={[
+            ['Stage', stage(job.stage)],
+            ['On site', shortDate(job.on_site_on)],
+            ['Planned finish', shortDate(job.planned_finish_on)],
+            ['Completed', shortDate(job.completed_on)],
+            ['Closed', shortDate(job.closed_on)],
+            ['Cost logged', money(job.ops_cost)],
+          ]}
+        />
+        <SystemColumn
+          title="Accounting"
+          rows={[
+            ['Revenue in ledger', money(job.ledger_revenue)],
+            ['Cost in ledger', money(job.ledger_cost)],
+            ['Invoices sent', money(job.sent)],
+            ['Still owed', money(job.owed)],
+            ['Vendor bills unpaid', money(job.unpaid_bills)],
+          ]}
+        />
       </div>
     </Card>
   )
@@ -300,7 +316,7 @@ export function JobDetail() {
             }
           />
 
-          <div className="grid grid-cols-1 gap-4 @[58rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_18.75rem] @[80rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_25rem]">
+          <div className="grid grid-cols-1 gap-4 @[52rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_18.75rem] @[72rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_25rem]">
             <FigurePicker
               title="Revenue"
               name="revenue"
@@ -317,7 +333,7 @@ export function JobDetail() {
 
           <NextSteps jobNumber={data.job_number} items={data.items} />
 
-          <div className="grid grid-cols-1 gap-4 @[80rem]:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 @[72rem]:grid-cols-2">
             <Documents title="Customer invoices" lines={data.invoices} empty="No invoices yet" />
             <Documents title="Vendor bills" lines={data.vendor_bills} empty="No vendor bills on this job" vendor />
           </div>

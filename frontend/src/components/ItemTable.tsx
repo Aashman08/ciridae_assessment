@@ -72,7 +72,7 @@ function Detail({ item, work }: { item: Item; work: ReturnType<typeof useItemWor
 
   return (
     <div className="flex flex-col gap-5 px-5 py-5 whitespace-normal">
-      <div className="grid grid-cols-1 gap-x-8 gap-y-5 @[58rem]:grid-cols-2">
+      <div className="grid grid-cols-1 gap-x-8 gap-y-5 @[52rem]:grid-cols-2">
         <div className="flex flex-col gap-1">
           <h4 className={HEADING}>{done ? 'What was wrong' : 'What is wrong'}</h4>
           {item.details.map((detail) => (
@@ -102,7 +102,7 @@ function Detail({ item, work }: { item: Item; work: ReturnType<typeof useItemWor
       </div>
 
       {/* The same two columns as above, so Follow up on lines up under Suggested next step. */}
-      <dl className="grid grid-cols-1 gap-x-8 gap-y-5 @[58rem]:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-5 @[52rem]:grid-cols-2">
         {[
           ['Owner', `${item.owner}, ${OWNER_ROLES[item.owner_role]}`],
           ...(item.company ? [[item.kind.startsWith('bill') ? 'Vendor' : 'Customer', item.company]] : []),

@@ -61,7 +61,7 @@ export function JobTable({ jobs, full = false, showOwner = true, sorting }: JobT
                 {/* The link makes the row reachable by keyboard; the row click is a convenience. */}
                 <Link
                   to={`/jobs/${job.job_number}`}
-                  className={`block truncate ${full ? 'max-w-[16rem] @[80rem]:max-w-[30rem]' : 'max-w-[22.5rem]'}`}
+                  className={`block truncate ${full ? 'max-w-[16rem] @[72rem]:max-w-[30rem]' : 'max-w-[22.5rem]'}`}
                   title={job.name}
                   onClick={(e) => e.stopPropagation()}
                 >

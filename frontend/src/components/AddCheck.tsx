@@ -87,7 +87,7 @@ export function AddCheck({ onDone }: { onDone: () => void }) {
         {current && (
           <div className="flex flex-col gap-4 rounded-lg bg-bg p-4">
             {/* What the assistant made of the description, one fact each. */}
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 @[58rem]:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 @[52rem]:grid-cols-4">
               {[
                 ['Name', current.title],
                 ['Looks at', LOOKS_AT[current.subject]],

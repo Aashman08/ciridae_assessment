@@ -32,8 +32,8 @@ export function ActivityTable({ entries, showJob = false, showCheck = true, empt
             <th>What</th>
             {showJob && <th className="max-md:hidden">Job</th>}
             {/* Narrower screens drop the check, then the document, so the note keeps its room. */}
-            {showCheck && <th className="@max-[70rem]:hidden">Check</th>}
-            <th className="@max-[56rem]:hidden">Document</th>
+            {showCheck && <th className="@max-[63rem]:hidden">Check</th>}
+            <th className="@max-[50rem]:hidden">Document</th>
             <th>Note</th>
           </tr>
         </thead>
@@ -50,8 +50,8 @@ export function ActivityTable({ entries, showJob = false, showCheck = true, empt
                 <td>{who(entry.by)}</td>
                 <td>{what(entry.kind, entry.source)}</td>
                 {showJob && <td className="max-w-[14rem] truncate text-ink-2 max-md:hidden">{entry.job_name ?? ''}</td>}
-                {showCheck && <td className="max-w-[13rem] truncate text-ink-2 @max-[70rem]:hidden">{entry.about ?? ''}</td>}
-                <td className="font-mono text-[0.8125rem] text-ink-2 @max-[56rem]:hidden">{entry.document ?? ''}</td>
+                {showCheck && <td className="max-w-[13rem] truncate text-ink-2 @max-[63rem]:hidden">{entry.about ?? ''}</td>}
+                <td className="font-mono text-[0.8125rem] text-ink-2 @max-[50rem]:hidden">{entry.document ?? ''}</td>
                 {/* A note can run to a few lines; it is the one cell allowed to wrap, and takes the room left. */}
                 <td className="w-full min-w-[14rem] py-2! whitespace-normal! text-ink-2">{entry.text ?? ''}</td>
               </tr>

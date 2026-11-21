@@ -220,10 +220,10 @@
 
 @layer base {
   /* The whole interface is sized in rem, so this one value scales everything
-     together: text, spacing, rows, buttons and icons. 112.5% is one step up
+     together: text, spacing, rows, buttons and icons. 125% is two steps up
      from the browser default. */
   html {
-    font-size: 112.5%;
+    font-size: 125%;
   }
 
   html,

@@ -70,7 +70,7 @@ export function NextSteps({ jobNumber, items }: { jobNumber: string; items: JobI
           items.suggestion && (
             // The one thing to do first: what it is, which document and how much, why, and the
             // button that starts it. The step is named once, on the button.
-            <div className="mx-5 mb-4 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 rounded-xl @[44rem]:items-center border border-brand/20 bg-brand-soft/50 p-4 @[44rem]:grid-cols-[auto_minmax(0,1fr)_auto]">
+            <div className="mx-5 mb-4 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 rounded-xl @[40rem]:items-center border border-brand/20 bg-brand-soft/50 p-4 @[40rem]:grid-cols-[auto_minmax(0,1fr)_auto]">
               <span aria-hidden className="grid size-10 place-items-center rounded-full bg-btn text-btn-ink">
                 <ArrowRight size="1.125rem" strokeWidth={1.75} />
               </span>
@@ -83,7 +83,7 @@ export function NextSteps({ jobNumber, items }: { jobNumber: string; items: JobI
                 </p>
                 {items.suggestion.reason && <p className="text-[0.8125rem] text-ink-2">{items.suggestion.reason}</p>}
               </div>
-              <div className="col-span-2 @[44rem]:col-span-1">
+              <div className="col-span-2 @[40rem]:col-span-1">
                 <Button variant="primary" disabled={work.busy} onClick={() => work.start(first)}>
                   {items.suggestion.action.label}
                 </Button>

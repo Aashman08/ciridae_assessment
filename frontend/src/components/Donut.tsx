@@ -61,7 +61,7 @@ export function Donut({ title, heading, slices, total, note }: DonutProps) {
       <h3 className="font-medium">{title}</h3>
 
       <div className="@container">
-        <div className="grid grid-cols-1 items-center gap-6 @[30rem]:grid-cols-[10rem_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 items-center gap-6 @[27rem]:grid-cols-[10rem_minmax(0,1fr)]">
           <div className="relative mx-auto size-40">
             <svg role="img" aria-label={title} viewBox={`0 0 ${size} ${size}`} className="block size-full">
               {slices.map((slice, index) =>
