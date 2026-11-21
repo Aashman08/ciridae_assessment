@@ -595,35 +595,37 @@ class ReconClient:
 
     async def draft_check(self, payload: CheckDraftRequest) -> CheckDraftResponse:
         """Turn a person's words into a check and show what it would flag today, without saving
-        anything. A rule is validated against the fields and run as code; a reading check is
-        read over today's notes, and only findings that quote those notes are shown."""
+        anything. The assistant names it and works out what it looks at; a rule is validated
+        against the fields and run as code; a reading check is read over today's notes, and
+        only findings that quote those notes are shown."""
         run = await self._current_run()
-        reply = await self._with_model(check_writer.draft(payload.words, payload.subject))
+        reply = await self._with_model(check_writer.draft(payload.words))
+        subject = reply.subject
+        named = {"title": reply.title.strip(), "subject": subject, "about": reply.about, "severity": reply.severity}
         if reply.approach == "rule":
             if reply.rule is None:
                 raise AskFailedError()
-            rule = rules.validate(reply.rule, payload.subject)
-            probe = IssueType(key="draft", title="draft", subject=payload.subject, origin="rule", rule=rule.model_dump())
+            rule = rules.validate(reply.rule, subject)
+            probe = IssueType(key="draft", title="draft", subject=subject, origin="rule", rule=rule.model_dump())
             findings = await rules.run_rule(self.db, run, probe, rule)
             return CheckDraftResponse(
-                approach="rule", reason=reply.reason, rule=rule, reads_as=rules.in_words(rule, payload.subject),
+                **named, approach="rule", reason=reply.reason, rule=rule, reads_as=rules.in_words(rule, subject),
                 would_flag=await self._check_findings(findings),
             )
         if reply.approach == "reading":
-            if payload.subject == "vendor_bill":
+            if subject == "vendor_bill":
                 return CheckDraftResponse(
-                    approach="cannot", reason="Only reading notes could tell, and vendor bills carry no notes.",
+                    **named, approach="cannot", reason="Only reading notes could tell, and vendor bills carry no notes.",
                     rule=None, reads_as=None, would_flag=[],
                 )
-            shown = await reading.texts(self.db, payload.subject)
-            flags = await self._with_model(reading.read(payload.words, payload.subject, shown)) if shown else {}
-            would = await self._reading_findings(payload.subject, flags)
+            shown = await reading.texts(self.db, subject)
+            flags = await self._with_model(reading.read(payload.words, subject, shown)) if shown else {}
             return CheckDraftResponse(
-                approach="reading", reason=reply.reason, rule=None,
-                reads_as=f"The assistant reads the notes on each {rules.SUBJECT_WORDS[payload.subject]} for: {payload.words}",
-                would_flag=would,
+                **named, approach="reading", reason=reply.reason, rule=None,
+                reads_as=f"The assistant reads the notes on each {rules.SUBJECT_WORDS[subject]} for: {payload.words}",
+                would_flag=await self._reading_findings(subject, flags),
             )
-        return CheckDraftResponse(approach="cannot", reason=reply.reason, rule=None, reads_as=None, would_flag=[])
+        return CheckDraftResponse(**named, approach="cannot", reason=reply.reason, rule=None, reads_as=None, would_flag=[])
 
     async def _check_findings(self, findings: list) -> list[CheckFinding]:
         names = dict((await self.db.execute(select(Job.id, Job.job_number))).all())

@@ -5,53 +5,39 @@ import type { CheckDraft, CheckSubject } from '../lib/api'
 import { money } from '../lib/format'
 import { useViewer } from '../lib/viewer'
 import { Working } from './Conversation'
-import { Button, Card, CardHead, Empty, Select } from './ui'
+import { Button, Card, CardHead, Empty } from './ui'
 
 const FIELD = 'w-full rounded-lg border border-hair bg-bg px-3 text-ink placeholder:text-muted'
 
-const SUBJECTS: { value: CheckSubject; label: string }[] = [
-  { value: 'job', label: 'Each job' },
-  { value: 'customer_invoice', label: 'Each customer invoice' },
-  { value: 'vendor_bill', label: 'Each vendor bill' },
-]
-const AREAS = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'billing', label: 'Billing' },
-  { value: 'cost', label: 'Cost' },
-  { value: 'schedule', label: 'Schedule' },
-  { value: 'ownership', label: 'Ownership' },
-]
-const SEVERITIES = [
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-]
+const LOOKS_AT: Record<CheckSubject, string> = {
+  job: 'Each job',
+  customer_invoice: 'Each customer invoice',
+  vendor_bill: 'Each vendor bill',
+}
 
 /**
- * Where someone adds a check of their own. They say what to flag in their own words;
- * the assistant works out whether it can be tested on the records (a rule, which then
+ * Where someone adds a check of their own. They say what to flag in their own words,
+ * and nothing else: the assistant names it, works out what it looks at, its area and
+ * severity, and whether it can be tested on the records (a rule, which then
  * runs on every sync with no model involved) or only by reading notes. "Try it" shows
  * exactly what it would flag today before anything is saved.
  */
 export function AddCheck({ onDone }: { onDone: () => void }) {
   const { viewer } = useViewer()
   const client = useQueryClient()
-  const [title, setTitle] = useState('')
   const [words, setWords] = useState('')
-  const [subject, setSubject] = useState<CheckSubject>('job')
-  const [about, setAbout] = useState('cost')
-  const [severity, setSeverity] = useState<'high' | 'medium'>('medium')
-  const [tried, setTried] = useState<{ draft: CheckDraft; words: string; subject: CheckSubject } | null>(null)
+  const [tried, setTried] = useState<{ draft: CheckDraft; words: string } | null>(null)
 
   const attempt = useMutation({
-    mutationFn: () => api.draftCheck({ words, subject }),
-    onSuccess: (draft) => setTried({ draft, words, subject }),
+    mutationFn: () => api.draftCheck({ words }),
+    onSuccess: (draft) => setTried({ draft, words }),
   })
   const add = useMutation({
     mutationFn: () => {
-      const draft = tried!.draft
+      const { draft } = tried!
       return api.createCheck({
-        title, words: tried!.words, subject: tried!.subject, approach: draft.approach as 'rule' | 'reading',
-        rule: draft.rule, severity, about, actor: viewer.name,
+        title: draft.title, words: tried!.words, subject: draft.subject, approach: draft.approach as 'rule' | 'reading',
+        rule: draft.rule, severity: draft.severity, about: draft.about, actor: viewer.name,
       })
     },
     onSuccess: async () => {
@@ -61,31 +47,13 @@ export function AddCheck({ onDone }: { onDone: () => void }) {
   })
 
   // A changed description has to be tried again before it can be added.
-  const current = tried && tried.words === words && tried.subject === subject ? tried.draft : null
+  const current = tried && tried.words === words ? tried.draft : null
   const canTry = words.trim().length >= 8 && !attempt.isPending
-  const canAdd = current && current.approach !== 'cannot' && title.trim().length >= 3 && !add.isPending
 
   return (
     <Card>
       <CardHead title="Add a check" />
       <div className="flex flex-col gap-4 px-5 pb-5">
-        <div className="grid grid-cols-1 gap-4 @[58rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <label className="flex flex-col gap-1">
-            <span className="text-[0.8125rem] font-medium">Name</span>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Large invoice still open"
-              maxLength={120}
-              className={`${FIELD} h-9`}
-            />
-          </label>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Select layout="stacked" label="Looks at" value={subject} onChange={(v) => setSubject(v as CheckSubject)} options={SUBJECTS} />
-            <Select layout="stacked" label="Area" value={about} onChange={setAbout} options={AREAS} />
-            <Select layout="stacked" label="Severity" value={severity} onChange={(v) => setSeverity(v as 'high' | 'medium')} options={SEVERITIES} />
-          </div>
-        </div>
         <label className="flex flex-col gap-1">
           <span className="text-[0.8125rem] font-medium">What should it flag?</span>
           <textarea
@@ -93,7 +61,7 @@ export function AddCheck({ onDone }: { onDone: () => void }) {
             onChange={(e) => setWords(e.target.value)}
             rows={3}
             maxLength={600}
-            placeholder="Sent invoices with more than $100,000 still open. Or: the customer says they dispute the invoice."
+            placeholder="Sent invoices with more than $100,000 still open. Or: a customer says they dispute an invoice."
             className={`${FIELD} resize-none py-2`}
           />
         </label>
@@ -103,7 +71,7 @@ export function AddCheck({ onDone }: { onDone: () => void }) {
             {current ? 'Try again' : 'Try it'}
           </Button>
           {current && current.approach !== 'cannot' && (
-            <Button variant="primary" disabled={!canAdd} onClick={() => add.mutate()}>
+            <Button variant="primary" disabled={add.isPending} onClick={() => add.mutate()}>
               {add.isPending ? 'Adding' : 'Add this check'}
             </Button>
           )}
@@ -115,7 +83,21 @@ export function AddCheck({ onDone }: { onDone: () => void }) {
         {attempt.isPending && <Working label="The assistant is working out how to run this check" />}
 
         {current && (
-          <div className="flex flex-col gap-3 rounded-lg bg-bg p-4">
+          <div className="flex flex-col gap-4 rounded-lg bg-bg p-4">
+            {/* What the assistant made of the description, one fact each. */}
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 @[58rem]:grid-cols-4">
+              {[
+                ['Name', current.title],
+                ['Looks at', LOOKS_AT[current.subject]],
+                ['Area', current.about.charAt(0).toUpperCase() + current.about.slice(1)],
+                ['Severity', current.severity === 'high' ? 'High' : 'Medium'],
+              ].map(([label, value]) => (
+                <div key={label} className="flex min-w-0 flex-col gap-1">
+                  <dt className="text-[0.8125rem] font-medium">{label}</dt>
+                  <dd className="text-ink-2">{value}</dd>
+                </div>
+              ))}
+            </dl>
             <div className="flex flex-col gap-1">
               <p className="text-[0.8125rem] font-medium">
                 {current.approach === 'rule'

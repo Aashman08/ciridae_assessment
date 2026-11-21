@@ -911,6 +911,10 @@ class Rule(BaseModel):
 class CheckDraftReply(BaseModel):
     """What the model hands back when asked to turn a person's words into a check."""
 
+    title: str = Field(min_length=3, max_length=80, description="A short name for the check, in sentence case")
+    subject: CheckSubject = Field(description="What it looks at: each job, each customer invoice or each vendor bill")
+    about: Literal["cash", "billing", "cost", "schedule", "ownership"]
+    severity: Literal["high", "medium"] = Field(description="high when money is at risk now or a deadline is close; otherwise medium")
     approach: Literal["rule", "reading", "cannot"] = Field(
         description="rule: it can be tested on the fields. reading: only reading notes can tell. cannot: neither"
     )
@@ -934,7 +938,6 @@ class CheckDraftRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     words: str = Field(min_length=8, max_length=600, description="What to look for, in the person's own words")
-    subject: CheckSubject
 
 
 class CheckFinding(BaseModel):
@@ -948,6 +951,10 @@ class CheckFinding(BaseModel):
 
 
 class CheckDraftResponse(BaseModel):
+    title: str
+    subject: CheckSubject
+    about: str
+    severity: str
     approach: Literal["rule", "reading", "cannot"]
     reason: str
     rule: Rule | None

@@ -28,8 +28,11 @@ def reply(body: dict) -> ResponseOutputMessage:
     )
 
 
-def wrote(approach: str, rule: dict | None = None, reason: str = "It can be tested on the fields.") -> ResponseOutputMessage:
-    return reply({"approach": approach, "rule": rule, "reason": reason})
+def wrote(approach: str, rule: dict | None = None, subject: str = "customer_invoice", title: str = "Large invoice still open") -> ResponseOutputMessage:
+    return reply({
+        "title": title, "subject": subject, "about": "cash", "severity": "high",
+        "approach": approach, "rule": rule, "reason": "It can be tested on the fields.",
+    })
 
 
 def flagged(*flags: dict) -> ResponseOutputMessage:
@@ -42,9 +45,11 @@ async def items(api) -> list[dict]:
 
 async def test_a_description_becomes_a_rule_that_is_tried_before_it_is_saved(api, db, model):  # noqa: F811
     model(wrote("rule", BIG_SENT))
-    response = await api.post(f"{API}/checks/draft", json={"words": "Sent invoices with more than $100k still open", "subject": "customer_invoice"})
+    response = await api.post(f"{API}/checks/draft", json={"words": "Sent invoices with more than $100k still open"})
     assert response.status_code == 200, response.text
     draft = response.json()
+    # The assistant names the check and works out what it looks at; the person only wrote one sentence.
+    assert (draft["title"], draft["subject"], draft["about"], draft["severity"]) == ("Large invoice still open", "customer_invoice", "cash", "high")
     assert draft["approach"] == "rule"
     assert draft["reads_as"] == "Flags a customer invoice where open amount is more than $100,000 and status is sent"
     expected = await db.scalar(text(
@@ -57,8 +62,8 @@ async def test_a_description_becomes_a_rule_that_is_tried_before_it_is_saved(api
 
 
 async def test_a_rule_naming_a_field_that_does_not_exist_is_refused(api, model):  # noqa: F811
-    model(wrote("rule", {**BIG_SENT, "conditions": [{"field": "profit_vibes", "op": ">", "value": 1, "other_field": None, "times": None}]}))
-    response = await api.post(f"{API}/checks/draft", json={"words": "Jobs that feel unprofitable", "subject": "job"})
+    model(wrote("rule", {**BIG_SENT, "conditions": [{"field": "profit_vibes", "op": ">", "value": 1, "other_field": None, "times": None}]}, subject="job"))
+    response = await api.post(f"{API}/checks/draft", json={"words": "Jobs that feel unprofitable"})
     assert response.status_code == 400 and "profit_vibes" in response.json()["error"]["message"]
 
 
@@ -102,8 +107,8 @@ async def test_a_job_rule_can_compare_one_field_with_a_share_of_another(api, db,
             {"field": "stage", "op": "=", "value": "IN_PROGRESS", "other_field": None, "times": None},
         ],
         "amount_field": "ops_cost",
-    }))
-    draft = (await api.post(f"{API}/checks/draft", json={"words": "Jobs in progress that have used 90% of budget", "subject": "job"})).json()
+    }, subject="job", title="Most of the budget used"))
+    draft = (await api.post(f"{API}/checks/draft", json={"words": "Jobs in progress that have used 90% of budget"})).json()
     expected = await db.scalar(text("""
         select count(*) from recon.job j join recon.job_financials f on f.job_id = j.id
         and f.sync_run_id = (select max(id) from recon.sync_run where status = 'succeeded')

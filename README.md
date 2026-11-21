@@ -113,7 +113,7 @@ React, TypeScript, Vite and Tailwind, in `frontend/src/`.
 | Customer invoices, Vendor bills | Every invoice and bill across jobs |
 | Connectors | The three source systems with how much of each was read and when, and the email account a follow-up is sent with |
 | Audit log | Every action, read-only: everything anyone did in this app (issues found, updated, resolved, dismissed, checks changed, commitments marked done), newest first, filterable by who, what and job. What syncs did is hidden until switched on. Notes from the source systems are not here; they are on each job's page |
-| Checks (under Settings) | What every sync looks for. Seventeen are built in. **Add a check** lets someone describe a new one in their own words: the assistant turns it into a rule over the records (which then runs on every sync as code, with no model) or, when only notes can show it, a reading check. **Try it** shows what it would flag today before it is saved. Every check has an on/off switch, and any with a tolerance can be tuned; **Sync now** applies a change straight away |
+| Checks (under Settings) | What every sync looks for. Seventeen are built in. **Add a check** takes one description in plain words; the assistant names the check, works out what it looks at, its area and severity, and turns it into a rule over the records (which then runs on every sync as code, with no model) or, when only notes can show it, a reading check. **Try it** shows what it would flag today before it is saved. Every check has an on/off switch, and any with a tolerance can be tuned; **Sync now** applies a change straight away |
 
 | Folder | Holds |
 | --- | --- |

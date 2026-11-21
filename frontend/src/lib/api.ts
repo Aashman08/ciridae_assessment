@@ -266,6 +266,11 @@ export interface Rule {
 
 /** How the assistant would run a described check, and what it would flag today. Nothing is saved yet. */
 export interface CheckDraft {
+  /** What the assistant worked out from the description: a name, what it looks at, its area and severity. */
+  title: string
+  subject: CheckSubject
+  about: string
+  severity: 'high' | 'medium'
   approach: 'rule' | 'reading' | 'cannot'
   reason: string
   rule: Rule | null
@@ -673,7 +678,7 @@ export const api = {
     request<ListResponse<ActivityEntry>>(`/activity${query(params)}`),
 
   issueTypes: () => request<IssueType[]>('/issue-types'),
-  draftCheck: (body: { words: string; subject: CheckSubject }) => post<CheckDraft>('/checks/draft', body),
+  draftCheck: (body: { words: string }) => post<CheckDraft>('/checks/draft', body),
   createCheck: (body: {
     title: string
     words: string
