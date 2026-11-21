@@ -178,15 +178,80 @@ The backend has four packages: `core`, `sync`, `checks` and `agents`. Three file
 above them: `server.py`, `endpoints.py` and `client.py`. Each route calls one method
 on the client. The client owns the session and the transaction for the request.
 
-## 9. What I would build next
+## 9. How Harborstone grows 5 times
 
-To help Harborstone grow 5 times, the next steps are:
+Harborstone wants to grow 5 times. About 100 people run the back office today. They
+match the three systems by hand, and they follow up by email and spreadsheet. That
+work grows with each new job. Thus the business cannot grow 5 times on the same team.
 
-1. **Live connectors** to the CRM, the project system and accounting, with write-back
-   after a person approves. For example, send an invoice or approve a bill from the item.
-2. **Fix the "no operations manager" check** so it does not flag closed or cancelled jobs.
-3. **Month-end close** for finance: what blocks the close, and what is not booked.
-4. **A view for each branch**, with the same figures and items.
-5. **Sales pipeline** when the CRM data is complete enough to trust.
-6. **Sign-in and roles**, to replace the "Signed in as" switcher.
-7. **More data for the AI**, such as the full text of vendor emails and attachments.
+Three things stop growth today:
+
+- **Cash is stuck.** $719,004 is past due, $369,100 is not invoiced to the customer yet,
+  and $127,600 is earned but not billed.
+- **People spend their day on follow-ups.** Each problem needs a person to find it,
+  write to someone, wait, and check again.
+- **Nobody sees the whole business.** No single view shows where growth, delivery or
+  cash is slow, by branch.
+
+The goal is that the same team runs 5 times the jobs. The app must do the matching,
+the follow-ups and the reports. People must only make decisions.
+
+### 9.1 For every person
+
+1. **Live connectors to the three systems.** Read the CRM, the project system and
+   accounting continuously, not from an export.
+2. **Write-back after approval.** A person approves, and the app does the change in the
+   source system. For example, it sends an invoice, approves a bill, or codes a bill to a job.
+3. **Send messages where the team works.** Today the app writes a draft, and the person
+   sends it from their own email. Next, the app sends it from their mailbox after they
+   approve. It also posts internal messages to the team's chat tool, to the owner of the item.
+4. **Read the replies.** The AI reads each reply to a message that the app sent. It logs
+   the update on the item and suggests the next step. For example, "Payment Friday"
+   sets a follow-up date. This removes the manual follow-up loop.
+
+### 9.2 Maya Chen, COO
+
+Maya wants one trusted view across regions, and to see where growth, delivery or cash
+is slow.
+
+- **Lead to cash, as one line.** Show each stage: opportunity, won, on site, complete,
+  invoiced, paid. Show the dollars and the days in each stage, for each branch.
+  The data has 18 branches; jobs exist in 5 of them today.
+- **A branch scorecard.** Revenue, margin, cash owed, days to start, and open items
+  for each branch, from the same fixed figures as the rest of the app.
+- **A weekly brief.** The AI writes a short summary of what changed and where things
+  are stuck. Each sentence links to the figure and the records behind it.
+
+### 9.3 Devon Brooks, VP of Growth
+
+Devon wants to know which relationships are active, which opportunities are real,
+where conversion is slow, and which customers need attention. Salespeople must not
+type more data.
+
+- **The pipeline.** There are 10 open opportunities worth $3,980,500. Of that,
+  $2,470,000 is at proposal. Bids worth $1,690,000 are submitted and not decided.
+- **Where conversion is slow.** Show the days in each stage, and the reasons for loss.
+  An opportunity that is older than usual for its stage gets a flag.
+- **Which relationships are active.** Show the last contact with each customer. Flag a
+  customer who brings repeat work but has no contact for a long time.
+- **Which customers need attention.** Combine revenue, margin, payment speed and open
+  opportunities for each customer. A customer who pays late and has a large open
+  proposal needs a different approach than a customer who pays on time.
+- **No data entry.** The AI reads sales email and meeting notes. It logs each contact
+  and suggests a change of stage. The salesperson only approves the change.
+
+### 9.4 Rachel Kim, Luis Ortega and Tasha Green
+
+- **Rachel: month-end close.** Show what blocks the close: bills not booked, invoices
+  not sent, revenue not billed. Add a cash forecast by week from due dates, payment
+  history and the promises in notes.
+- **Luis: less admin for project teams.** Let crews confirm the start, log costs and add
+  photos from a phone. Each urgent job gets a start alert to its owner.
+- **Tasha: one queue for her team.** Show all branches and vendors in one list, and
+  give vendor messages the same flow as customer messages.
+
+### 9.5 Before more people use it
+
+- Sign-in and roles, to replace the "Signed in as" switcher.
+- Fix the "no operations manager" check so it does not flag closed or cancelled jobs.
+- More data for the AI: the full text of emails and attachments.
